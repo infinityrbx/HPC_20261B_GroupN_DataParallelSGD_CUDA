@@ -1,0 +1,13 @@
+{
+  "id": "YOUR_KAGGLE_USERNAME/hpc-allreduce-check",
+  "title": "hpc-allreduce-check",
+  "code_file": "kaggle_check.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": []
+}
