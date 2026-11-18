@@ -90,6 +90,12 @@ scripts/    get_mnist.sh, run_experiments.sh
 
 * `mlp_seq` was built and run with the fixed settings: **96.2 % test accuracy**, about 4.9 s per epoch
   (on one CPU core of the build machine). This is the reference every GPU version must match.
-* CUDA files passed a compiler syntax check but **have not been run on a GPU yet**.
-  The first job on Kaggle is: `make`, `bench_allreduce --method host_ref --gpus 2 --check-only`,
-  then `train_dp --gpus 1` and compare its loss with `mlp_seq`.
+* **First GPU run on Kaggle (2 × Tesla T4, CUDA 13.0)**: everything builds; `host_ref` passes all
+  correctness checks; seq, 1-GPU and 2-GPU training give the same loss to ~1e-5 and 92.7 % test
+  accuracy after 2 epochs. 1 GPU: 0.24 s/epoch; 2 GPUs with `host_ref`: 0.41 s/epoch (64 % of
+  the step is communication). That is the baseline to beat.
+* **Kaggle T4s have NO peer access** (P2P matrix all 0, topology PHB). `cudaMemcpyPeerAsync` still
+  works there but is staged through host memory by the driver, and kernels cannot read another
+  GPU's memory directly. Design your method so it works with and without P2P.
+* Re-run the check any time: `kaggle kernels push -p scripts/kaggle --accelerator NvidiaTeslaT4`
+  (set your username in `scripts/kaggle/kernel-metadata.json` first).
