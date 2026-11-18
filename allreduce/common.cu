@@ -6,7 +6,6 @@
 #define AR_MAX_GPUS 8
 #define AR_SLOTS 4
 
-static int    g_k = 0;
 static int    g_p2p[AR_MAX_GPUS][AR_MAX_GPUS];
 static float *g_scratch[AR_MAX_GPUS][AR_SLOTS];
 static size_t g_scratch_bytes[AR_MAX_GPUS][AR_SLOTS];
@@ -18,7 +17,6 @@ void ar_setup(int k) {
         fprintf(stderr, "requested %d GPUs, %d available (max %d)\n", k, count, AR_MAX_GPUS);
         exit(1);
     }
-    g_k = k;
     for (int i = 0; i < k; i++) {
         CUDA_CHECK(cudaSetDevice(i));
         for (int j = 0; j < k; j++) {
@@ -109,7 +107,6 @@ void ar_teardown(void) {
                 cudaFree(g_scratch[d][s]);
                 g_scratch[d][s] = NULL; g_scratch_bytes[d][s] = 0;
             }
-    (void)g_k;
 }
 
 void ar_todo(const char *name) {
