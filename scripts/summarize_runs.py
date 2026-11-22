@@ -62,23 +62,33 @@ for cfg, rs in by.items():
     print(f"| {cfg} | {len(rs)} | {fmt(mean_ep)} | {fmt(steady)} | {sp} | {fmt(comm, '{:.1f}')} | {fmt(acc, '{:.2f}')} | {diff} | {repl} |")
 
 if len(sys.argv) > 2:
-    sm, pw, tp, thr = [], [], [], defaultdict(int)
+    # Only samples under load (power >= 30 W); idle samples during build and download would hide throttling.
+    per = defaultdict(lambda: {"sm": [], "pw": [], "tp": [], "why": defaultdict(int)})
     try:
         for row in csv.DictReader(open(sys.argv[2]), skipinitialspace=True):
-            row = {k.strip(): v.strip() for k, v in row.items() if k}
+            row = {k.strip(): (v or "").strip() for k, v in row.items() if k}
             try:
-                sm.append(float(row["clocks.current.sm [MHz]"].split()[0]))
-                pw.append(float(row["power.draw [W]"].split()[0]))
-                tp.append(float(row["temperature.gpu"]))
+                pw = float(row["power.draw [W]"].split()[0])
             except (KeyError, ValueError, IndexError):
-                pass
-            for k, v in row.items():
-                if k.startswith("clocks_throttle_reasons.active"):
-                    thr[v] += 1
+                continue
+            if pw < 30:
+                continue
+            g = per[row.get("index", "?")]
+            g["pw"].append(pw)
+            g["sm"].append(float(row["clocks.current.sm [MHz]"].split()[0]))
+            g["tp"].append(float(row["temperature.gpu"]))
+            for k, v in row.items():  # clocks_throttle_reasons.active (old) or clocks_event_reasons.active (new)
+                if k.endswith("reasons.active"):
+                    g["why"][v] += 1
     except FileNotFoundError:
         pass
-    if sm:
-        print(f"\nGPU clocks during the run ({len(sm)} samples): SM {min(sm):.0f}–{max(sm):.0f} MHz "
-              f"(median {st.median(sm):.0f}), power {min(pw):.0f}–{max(pw):.0f} W, "
-              f"temperature {min(tp):.0f}–{max(tp):.0f} °C.")
-        print("Throttle-reason bitmask counts: " + ", ".join(f"{k}: {v}" for k, v in sorted(thr.items())))
+    names = {"0x0000000000000000": "none", "0x0000000000000001": "idle", "0x0000000000000004": "SW power cap",
+             "0x0000000000000020": "SW thermal", "0x0000000000000040": "HW thermal", "0x0000000000000080": "HW power brake"}
+    if per:
+        print("\nGPU clocks under load (power >= 30 W):\n")
+        print("| GPU | Samples | SM MHz (min / median / max) | Power W (min / median / max) | Temp °C (min / median / max) | Clock event reasons |")
+        print("|---|---|---|---|---|---|")
+        for gi, g in sorted(per.items()):
+            mm = lambda v, f: " / ".join(f.format(x) for x in (min(v), st.median(v), max(v)))
+            why = ", ".join(f"{names.get(k, k)} ×{n}" for k, n in sorted(g["why"].items(), key=lambda kv: -kv[1]))
+            print(f"| {gi} | {len(g['sm'])} | {mm(g['sm'], '{:.0f}')} | {mm(g['pw'], '{:.1f}')} | {mm(g['tp'], '{:.0f}')} | {why} |")

@@ -8,29 +8,32 @@ SGD on k GPUs, and the gradients are averaged with hand-written allreduce method
 cuBLAS or MPI). The paper analyses the communication cost (O(L·k) + O(k·p/B)) only in theory;
 this project measures it.
 
-All numbers below come from Kaggle, 2× Tesla T4, on 2026-11-22. Raw logs and CSVs are in
-[`runs/kaggle-2026-11-22/`](runs/kaggle-2026-11-22/) (training and allreduce) and
-[`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (kernel profile).
+All numbers come from Kaggle, 2× Tesla T4, with the fixed settings (10 epochs) and 3 repeats per
+configuration, built from this repository (commit 3fd2b8a). Results and raw CSVs:
+[`runs/kaggle-final-2026-11-22/`](runs/kaggle-final-2026-11-22/) (training and allreduce, with
+[`summary.md`](runs/kaggle-final-2026-11-22/summary.md)) and
+[`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (kernel profile). An earlier
+2-epoch run is kept in [`runs/kaggle-2026-11-22/`](runs/kaggle-2026-11-22/).
 
 ## Summary
 
 | Question | Answer |
 |---|---|
-| Are the GPU allreduce methods correct? | Yes. tree, ring and rd pass every check; replicas stay bitwise identical; loss matches 1 GPU to 3.4e-6; 92.70 % test accuracy after 2 epochs. |
-| Is a GPU faster than a CPU for training? | Yes. 1 T4: 0.208 s per epoch; sequential C on one CPU core: 7.99 s. About **38×**. |
+| Are the GPU allreduce methods correct? | Yes. tree, ring and rd pass every check; replicas stay bitwise identical; over 10 epochs the loss stays within 2e-5 of 1-GPU training; test accuracy 96.14 % (1 GPU and CPU: 96.16 %). |
+| Is a GPU faster than a CPU for training? | Yes. 1 T4: 0.199 s per epoch; sequential C on one CPU core: 8.19 s. About **41×**. |
 | Is matrix multiplication the bottleneck? | Yes. 99.7 % of the FLOPs and **94.5–95.5 % of GPU kernel time** (nsys). |
-| How much does communication cost? | About **half of every 2-GPU step** (47–50 % exposed communication) with the GPU methods, 68.5 % through the CPU. One allreduce of the 1.63 MB gradient takes 0.36–0.39 ms in the benchmark. |
-| Do 2 GPUs beat 1? | No, not at this model size. In steady state (epoch 2) 2 GPUs take 0.231–0.234 s per epoch against 0.208 s on 1 GPU, because communication eats the compute saved by splitting the batch. |
-| Which allreduce wins? | tree at 4–8 KB, recursive doubling from 16 KB to 2 MB, ring from 4 MB up. All reach 4.5–4.7 GB/s. |
+| How much does communication cost? | About **half of every 2-GPU step** (50–51 % exposed communication) with tree, ring and rd; 75 % through the CPU. One allreduce of the 1.63 MB gradient takes 0.36–0.39 ms on the GPUs, 1.19 ms through the CPU. |
+| Do 2 GPUs beat 1? | No, not at this model size. A steady-state epoch takes 0.224–0.228 s on 2 GPUs against 0.199 s on 1 GPU (0.87–0.89×), because communication costs about as much as the compute saved by splitting the batch. |
+| Which allreduce wins? | In the raw benchmark: host_ref at 4–8 KB, recursive doubling from 16 KB to 2 MB, ring from 4 MB up. In training, tree, ring and rd are within 2 % of each other and their repeat ranges overlap, so none wins. |
 
 ## Setup
 
 | Item | Value |
 |---|---|
 | Hardware | Kaggle, 2× Tesla T4 (70 W, sm_75), driver 580.178, CUDA 13.0 |
-| Interconnect | PCIe through the host bridge (topology PHB); P2P access on in this run |
+| Interconnect | PCIe through the host bridge (topology PHB) |
 | Model | MLP 784–512–10, 407,050 parameters (gradient 1.63 MB fp32) |
-| Training | seed 42, global batch 256 (128 per GPU at k = 2), lr 0.1, 2 epochs |
+| Training | seed 42, global batch 256 (128 per GPU at k = 2), lr 0.1, 10 epochs, 3 repeats per configuration (median reported) |
 | Benchmark | 4 KB to 64 MB, 5 warm-up + 20 timed runs, median; busbw = bytes/time × 2(k−1)/k |
 
 Methods (one file each in `src/allreduce/`):
@@ -47,22 +50,23 @@ Methods (one file each in `src/allreduce/`):
 
 | Check | host_ref | tree | ring | rd |
 |---|---|---|---|---|
-| `make simcheck` (mocked CUDA, random stream orders, k = 2..8) | n/a | pass | pass | pass |
+| `make simcheck` (mocked CUDA, random stream orders, k = 2..8; 5,670 runs) | n/a | pass | pass | pass |
 | `bench_allreduce --check-only`, all sizes incl. odd n | pass | pass | pass | pass |
 | Max parameter difference between replicas | 0 (bitwise) | 0 (bitwise) | 0 (bitwise) | 0 (bitwise) |
-| Loss vs 1 GPU, max abs diff (tol 1e-4) | 3.36e-6 | 3.36e-6 | 3.36e-6 | 3.36e-6 |
-| Test accuracy, 2 epochs | 92.70 % | 92.70 % | 92.70 % | 92.70 % |
+| Loss vs 1 GPU over 10 epochs, max abs diff | 2e-5 | 2e-5 | 2e-5 | 2e-5 |
+| Test accuracy, 10 epochs | 96.14 % | 96.14 % | 96.14 % | 96.14 % |
 
-The sequential C version also matches 1 GPU (max loss diff 3.67e-6, 92.70 %).
+1 GPU and the sequential C version both reach 96.16 % (max loss diff 1e-5). The 0.02-point gap
+on 2 GPUs comes from summing the gradient in a different order, which changes float rounding.
 
 ## 2. GPU vs CPU
 
-| Version | Epoch time | Speedup |
+| Version | Epoch time (steady state) | Speedup |
 |---|---|---|
-| Sequential C, one CPU core (`mlp_seq`) | 7.99 s | 1× |
-| 1× T4 (`train_dp --gpus 1`), epoch 2 | 0.208 s | ~38× |
+| Sequential C, one CPU core (`mlp_seq`) | 8.19 s | 1× |
+| 1× T4 (`train_dp --gpus 1`), median of 3 runs | 0.199 s | ~41× |
 
-Both reach the same loss (0.55714, then 0.30289) and 92.70 % test accuracy.
+Both reach the same loss curve and 96.16 % test accuracy.
 
 ## 3. Matrix multiplication is the compute bottleneck
 
@@ -96,80 +100,83 @@ compute directly.
 ## 4. Communication cost and speedup on 2 GPUs
 
 `train_dp` reports the epoch time and the exposed communication (end of backward to end of
-allreduce on GPU 0) as a share of the step:
+allreduce on GPU 0) as a share of the step. Median of 3 runs, min–max in brackets; steady state =
+median of epochs 2–10 (epoch 1 includes warm-up):
 
-| Config | Mean of 2 epochs (s) | Epoch 2 only (s) | Exposed comm |
+| Config | Steady epoch (s) | Speedup vs 1 GPU | Exposed comm |
 |---|---|---|---|
-| 1 GPU | 0.267 | 0.208 | 0.4 % |
-| host_ref | 0.463 | 0.436 | 68.5 % |
-| host_ref + overlap | 0.451 | 0.452 | 71.3 % |
-| tree | 0.243 | 0.234 | 46.8 % |
-| tree + overlap | 0.234 | 0.233 | 49.9 % |
-| ring | 0.250 | 0.231 | 50.3 % |
-| ring + overlap | 0.234 | 0.234 | 50.3 % |
-| rd | 0.251 | 0.233 | 48.4 % |
-| rd + overlap | 0.232 | 0.231 | 49.9 % |
+| 1 GPU | 0.199 (0.199–0.200) | 1.00× | 0.5 % |
+| host_ref | 0.420 (0.420–0.420) | 0.47× | 74.9 % |
+| host_ref + overlap | 0.433 (0.431–0.436) | 0.46× | 71.6 % |
+| tree | 0.225 (0.225–0.227) | 0.88× | 50.9 % |
+| tree + overlap | 0.227 (0.226–0.227) | 0.88× | 50.4 % |
+| ring | 0.225 (0.223–0.225) | 0.88× | 49.8 % |
+| ring + overlap | 0.227 (0.226–0.228) | 0.88× | 50.9 % |
+| rd | 0.228 (0.224–0.229) | 0.87× | 50.1 % |
+| rd + overlap | 0.224 (0.224–0.225) | 0.89× | 49.7 % |
 
 What this shows:
 
 - About half of every 2-GPU step is communication. In the benchmark (section 5), one allreduce
-  of the model's 1.63 MB gradient takes 0.36–0.39 ms, so communication costs about as much as
-  the compute saved by splitting the batch.
-- Doing the reduction on the GPUs instead of the CPU halves the epoch time (0.46 s → 0.23–0.25 s)
-  and lowers exposed communication from 68.5 % to about 50 %.
-- `--overlap` does not lower the exposed-communication share (still about 50 %); a two-layer MLP
-  has little backward work left to hide communication behind. Its 2-epoch mean is a little lower,
-  but on epoch 2 alone the difference is under 2 %, within noise.
-- In steady state (epoch 2), 2 GPUs are about 10 % slower than 1 GPU. The 2-epoch mean shows
-  1.06–1.15× instead, but only because the 1-GPU run's first epoch includes warm-up (0.326 s,
-  then 0.208 s).
+  of the model's 1.63 MB gradient takes 0.36–0.39 ms on the GPUs, so communication costs about as
+  much as the compute saved by splitting the batch, and 2 GPUs end up about 12 % slower than 1.
+- Doing the reduction on the GPUs instead of the CPU halves the epoch time (0.420 s → 0.225 s)
+  and lowers exposed communication from 75 % to about 50 %. A CPU allreduce of 1.63 MB takes
+  1.19 ms, three times the GPU methods.
+- tree, ring and rd are within 2 % of each other in training, and their ranges over 3 repeats
+  overlap, so the measurements cannot rank them at this message size.
+- `--overlap` makes no measurable difference (within ±1 %); a two-layer MLP has little backward
+  work left to hide communication behind.
+- Repeats are tight: the 3 runs of each configuration differ by at most 2 %.
 
 ## 5. Raw allreduce: which method wins at which size
 
-Median time per allreduce, k = 2, ms (`allreduce.csv`); bold is fastest:
+Median time per allreduce, k = 2, ms ([`allreduce.csv`](runs/kaggle-final-2026-11-22/allreduce.csv)); bold is fastest:
 
-| Size | tree | ring | rd |
-|---|---|---|---|
-| 4 KB | **0.031** | 0.053 | 0.034 |
-| 8 KB | **0.031** | 0.054 | 0.035 |
-| 16 KB | 0.041 | 0.053 | **0.035** |
-| 64 KB | 0.053 | 0.060 | **0.037** |
-| 256 KB | 0.101 | 0.100 | **0.076** |
-| 1 MB | 0.261 | 0.258 | **0.238** |
-| 2 MB | 0.486 | 0.481 | **0.456** |
-| 4 MB | 0.971 | **0.927** | 0.955 |
-| 16 MB | 3.776 | **3.608** | 3.750 |
-| 64 MB | 15.009 | **14.301** | 14.981 |
+| Size | host_ref | tree | ring | rd |
+|---|---|---|---|---|
+| 4 KB | **0.025** | 0.029 | 0.053 | 0.032 |
+| 8 KB | **0.029** | 0.030 | 0.052 | 0.032 |
+| 16 KB | 0.039 | 0.040 | 0.053 | **0.034** |
+| 64 KB | 0.064 | 0.052 | 0.060 | **0.038** |
+| 256 KB | 0.212 | 0.101 | 0.098 | **0.078** |
+| 1 MB | 0.779 | 0.262 | 0.272 | **0.237** |
+| 2 MB | 1.518 | 0.486 | 0.482 | **0.456** |
+| 4 MB | 3.005 | 0.970 | **0.926** | 0.955 |
+| 16 MB | 11.970 | 3.787 | **3.608** | 3.747 |
+| 64 MB | 47.980 | 15.001 | **14.298** | 14.979 |
 
-Bus bandwidth at 64 MB: tree 4.47, ring 4.69, rd 4.48 GB/s. A one-way peer copy reaches 9.9 GB/s.
+Bus bandwidth at 64 MB: host_ref 1.40, tree 4.47, ring 4.69, rd 4.48 GB/s. A one-way peer copy
+reaches 9.9 GB/s (`runs/kaggle-2026-11-22/`).
 
-- **Small messages are latency-bound.** Ring has a floor of about 0.053 ms because it runs more
-  dependent steps; tree and rd start at about 0.031–0.035 ms.
+- **Small messages are latency-bound.** For 4–8 KB, two small copies through the CPU are slightly
+  faster than any GPU method. Ring has a floor of about 0.053 ms because it runs more dependent
+  steps; tree and rd start at about 0.029–0.034 ms.
 - **Medium messages (16 KB–2 MB) favour recursive doubling**, by up to 30 % at 64 KB and 5–10 % at
   1–2 MB. The model's 1.63 MB gradient is in this range.
-- **Large messages are bandwidth-bound and favour ring**, but only by 4–5 %.
-- **All three reach about half the link rate.** Tree has to send the data one way and back, so
-  half is its limit. Ring and rd could use both directions at once but do not get further, which
+- **Large messages are bandwidth-bound and favour ring**, but only by 4–5 %. The CPU path is
+  3.3× slower than the GPU methods here (1.4 vs 4.5–4.7 GB/s).
+- **All GPU methods reach about half the link rate.** Tree has to send the data one way and back,
+  so half is its limit. Ring and rd could use both directions at once but do not get further, which
   suggests the two directions do not overlap and ring would need chunk pipelining.
-- With k = 2, the three algorithms move the same amount of data. Their textbook differences only
-  show at k ≥ 4.
+- **Reproducible.** These numbers match the earlier 2-epoch run on another Kaggle machine within
+  0.3 % for messages of 4 MB and up, and within 9 % for small messages.
+- With k = 2, the three GPU algorithms move the same amount of data. Their textbook differences
+  only show at k ≥ 4.
 
 ## Limitations
 
-- **One run, 2 epochs.** Differences between tree, ring and rd in training (under 4 % on epoch
-  time) are within run-to-run noise. Final numbers should use the default 10 epochs, report epoch
-  1 separately, and repeat each run at least 3 times.
 - **Only 2 GPUs.** Kaggle offers at most 2× T4, so the O(L·k) + O(k·p/B) scaling in k cannot be
   tested.
-- **P2P access varies between Kaggle machines.** This run had peer access on. An earlier Kaggle
-  machine had none (P2P matrix all 0); there, peer copies are staged through host memory and the
-  numbers are not comparable (1 GPU 0.24 s/epoch, `host_ref` 0.41 s/epoch with 64 %
-  communication). Always record the P2P matrix with the results.
-- **T4 power throttling.** The T4 is a 70 W passively cooled card that lowers its clocks under
-  sustained load. Clocks were not logged during the runs, so throttling cannot be ruled out.
-- **Code version.** The 2-GPU training log was built from the `ltnaphixay/allreduce-cuda` branch of
-  `infinityrbx/High-Performance-Computing`. Only numbers that this repository's code also
-  produces (epoch time, exposed communication, accuracy, allreduce benchmark) are reported here.
+- **Small model.** With 1.63 MB of gradient and under 1 ms of compute per step, communication
+  dominates. A larger model would shift the balance toward compute and show a real 2-GPU speedup.
+- **P2P access varies between Kaggle machines.** Some Kaggle 2× T4 machines have peer access and
+  some do not; without it, peer copies are staged through host memory and the numbers are not
+  comparable. Always record the P2P matrix with the results (the job logs it).
+- **T4 clocks were checked, not controlled.** Under load the SM clock stayed at its 1,590 MHz
+  maximum (median) on both GPUs, at 48 W median power and up to 82 °C. The driver reported a
+  power-cap event in 5 of 105 load samples on GPU 0 and none on GPU 1, so throttling had at most
+  a small effect.
 
 ## Build and run
 
@@ -192,6 +199,8 @@ On Kaggle (set your username in `kernel-metadata.json` first):
 ```bash
 kaggle kernels push -p scripts/kaggle/check --accelerator NvidiaTeslaT4    # build, check, train, benchmark
 kaggle kernels push -p scripts/kaggle/profile --accelerator NvidiaTeslaT4  # nsys kernel-time profile
+kaggle kernels push -p scripts/kaggle/final --accelerator NvidiaTeslaT4    # final run: 10 epochs x 3 repeats, clock log
+python3 scripts/summarize_runs.py results/final.log results/clocks.csv     # median table from that run
 ```
 
 Fixed settings live in `src/common/config.h`. CSV columns everywhere:
@@ -208,7 +217,7 @@ src/
   allreduce/  allreduce.h (interface), ar_sync.h, common.cu, registry.cu, one file per method
 bench/        bench_allreduce.cu: correctness + latency/bandwidth benchmark
 tests/        sim_allreduce.cpp + mock CUDA runtime (make simcheck)
-scripts/      run_experiments.sh, flops.py, kernel_share.py, get_mnist.sh
-  kaggle/     check/ (build, check, train, benchmark), profile/ (nsys kernel profile)
+scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, get_mnist.sh
+  kaggle/     check/ (quick check), profile/ (nsys kernel profile), final/ (final run)
 runs/         raw Kaggle logs and CSVs
 ```

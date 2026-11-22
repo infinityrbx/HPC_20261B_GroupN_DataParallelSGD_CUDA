@@ -8,29 +8,32 @@ k GPU; gradient được lấy trung bình bằng các thuật toán allreduce t
 hay MPI). Bài báo chỉ phân tích chi phí truyền thông (O(L·k) + O(k·p/B)) về mặt lý thuyết; đề tài
 này đo nó trên thực tế.
 
-Mọi số liệu dưới đây đo trên Kaggle, 2× Tesla T4, ngày 22/11/2026. Log và CSV gốc nằm trong
-[`runs/kaggle-2026-11-22/`](runs/kaggle-2026-11-22/) (huấn luyện và allreduce) và
-[`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (profile kernel).
+Mọi số liệu đo trên Kaggle, 2× Tesla T4, với thiết lập cố định (10 epoch) và lặp 3 lần mỗi cấu hình,
+build từ chính repo này (commit 3fd2b8a). Kết quả và CSV gốc:
+[`runs/kaggle-final-2026-11-22/`](runs/kaggle-final-2026-11-22/) (huấn luyện và allreduce, kèm
+[`summary.md`](runs/kaggle-final-2026-11-22/summary.md)) và
+[`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (profile kernel). Lần chạy
+2 epoch trước đó được giữ trong [`runs/kaggle-2026-11-22/`](runs/kaggle-2026-11-22/).
 
 ## Tóm tắt
 
 | Câu hỏi | Trả lời |
 |---|---|
-| Các thuật toán allreduce trên GPU có đúng không? | Có. tree, ring và rd qua mọi bài kiểm tra; các bản sao tham số giống nhau từng bit; loss khớp với 1 GPU sai khác 3,4e-6; độ chính xác 92,70 % sau 2 epoch. |
-| GPU có nhanh hơn CPU khi huấn luyện không? | Có. 1 T4: 0,208 s/epoch; bản C tuần tự trên một nhân CPU: 7,99 s. Nhanh khoảng **38 lần**. |
+| Các thuật toán allreduce trên GPU có đúng không? | Có. tree, ring và rd qua mọi bài kiểm tra; các bản sao tham số giống nhau từng bit; qua 10 epoch, loss chênh lệch không quá 2e-5 so với 1 GPU; độ chính xác 96,14 % (1 GPU và CPU: 96,16 %). |
+| GPU có nhanh hơn CPU khi huấn luyện không? | Có. 1 T4: 0,199 s/epoch; bản C tuần tự trên một nhân CPU: 8,19 s. Nhanh khoảng **41 lần**. |
 | Phép nhân ma trận có phải nút thắt cổ chai không? | Có. Chiếm 99,7 % số FLOP và **94,5–95,5 % thời gian kernel trên GPU** (đo bằng nsys). |
-| Truyền thông tốn bao nhiêu? | Khoảng **một nửa mỗi bước khi dùng 2 GPU** (47–50 % truyền thông không được che) với các phương pháp trên GPU, 68,5 % nếu đi qua CPU. Một lần allreduce gradient 1,63 MB mất 0,36–0,39 ms trong benchmark. |
-| 2 GPU có nhanh hơn 1 GPU không? | Không, với mô hình nhỏ này. Ở trạng thái ổn định (epoch 2), 2 GPU mất 0,231–0,234 s mỗi epoch so với 0,208 s của 1 GPU, vì thời gian truyền thông gần bằng phần tính toán tiết kiệm được khi chia batch. |
-| Thuật toán allreduce nào nhanh nhất? | tree ở 4–8 KB, recursive doubling từ 16 KB đến 2 MB, ring từ 4 MB trở lên. Cả ba đều đạt 4,5–4,7 GB/s. |
+| Truyền thông tốn bao nhiêu? | Khoảng **một nửa mỗi bước khi dùng 2 GPU** (50–51 % truyền thông không được che) với tree, ring và rd; 75 % nếu đi qua CPU. Một lần allreduce gradient 1,63 MB mất 0,36–0,39 ms trên GPU, 1,19 ms qua CPU. |
+| 2 GPU có nhanh hơn 1 GPU không? | Không, với mô hình nhỏ này. Mỗi epoch ổn định mất 0,224–0,228 s trên 2 GPU so với 0,199 s trên 1 GPU (0,87–0,89 lần), vì truyền thông tốn gần bằng phần tính toán tiết kiệm được khi chia batch. |
+| Thuật toán allreduce nào nhanh nhất? | Trong benchmark: host_ref ở 4–8 KB, recursive doubling từ 16 KB đến 2 MB, ring từ 4 MB trở lên. Khi huấn luyện, tree, ring và rd chênh nhau dưới 2 % và khoảng giá trị qua các lần lặp chồng lên nhau, nên không có thuật toán nào thắng. |
 
 ## Cấu hình thí nghiệm
 
 | Mục | Giá trị |
 |---|---|
 | Phần cứng | Kaggle, 2× Tesla T4 (70 W, sm_75), driver 580.178, CUDA 13.0 |
-| Kết nối | PCIe qua host bridge (topology PHB); lần chạy này có truy cập P2P |
+| Kết nối | PCIe qua host bridge (topology PHB) |
 | Mô hình | MLP 784–512–10, 407.050 tham số (gradient 1,63 MB fp32) |
-| Huấn luyện | seed 42, batch toàn cục 256 (128 mỗi GPU khi k = 2), lr 0,1, 2 epoch |
+| Huấn luyện | seed 42, batch toàn cục 256 (128 mỗi GPU khi k = 2), lr 0,1, 10 epoch, lặp 3 lần mỗi cấu hình (báo cáo trung vị) |
 | Benchmark | 4 KB đến 64 MB, 5 lần khởi động + 20 lần đo, lấy trung vị; busbw = bytes/time × 2(k−1)/k |
 
 Các phương pháp (mỗi phương pháp một file trong `src/allreduce/`):
@@ -47,22 +50,23 @@ Các phương pháp (mỗi phương pháp một file trong `src/allreduce/`):
 
 | Kiểm tra | host_ref | tree | ring | rd |
 |---|---|---|---|---|
-| `make simcheck` (CUDA giả lập, thứ tự stream ngẫu nhiên, k = 2..8) | không áp dụng | đạt | đạt | đạt |
+| `make simcheck` (CUDA giả lập, thứ tự stream ngẫu nhiên, k = 2..8; 5.670 lần chạy) | không áp dụng | đạt | đạt | đạt |
 | `bench_allreduce --check-only`, mọi kích thước kể cả n lẻ | đạt | đạt | đạt | đạt |
 | Sai khác tham số lớn nhất giữa các bản sao | 0 (từng bit) | 0 (từng bit) | 0 (từng bit) | 0 (từng bit) |
-| Loss so với 1 GPU, sai khác tuyệt đối lớn nhất (ngưỡng 1e-4) | 3,36e-6 | 3,36e-6 | 3,36e-6 | 3,36e-6 |
-| Độ chính xác trên tập test, 2 epoch | 92,70 % | 92,70 % | 92,70 % | 92,70 % |
+| Loss so với 1 GPU qua 10 epoch, sai khác tuyệt đối lớn nhất | 2e-5 | 2e-5 | 2e-5 | 2e-5 |
+| Độ chính xác trên tập test, 10 epoch | 96,14 % | 96,14 % | 96,14 % | 96,14 % |
 
-Bản C tuần tự cũng khớp với 1 GPU (sai khác loss lớn nhất 3,67e-6, 92,70 %).
+1 GPU và bản C tuần tự đều đạt 96,16 % (sai khác loss lớn nhất 1e-5). Chênh lệch 0,02 điểm trên
+2 GPU là do cộng gradient theo thứ tự khác, làm sai số làm tròn số thực khác đi.
 
 ## 2. GPU so với CPU
 
-| Phiên bản | Thời gian mỗi epoch | Tăng tốc |
+| Phiên bản | Thời gian mỗi epoch (ổn định) | Tăng tốc |
 |---|---|---|
-| C tuần tự, một nhân CPU (`mlp_seq`) | 7,99 s | 1× |
-| 1× T4 (`train_dp --gpus 1`), epoch 2 | 0,208 s | ~38× |
+| C tuần tự, một nhân CPU (`mlp_seq`) | 8,19 s | 1× |
+| 1× T4 (`train_dp --gpus 1`), trung vị 3 lần chạy | 0,199 s | ~41× |
 
-Cả hai đạt cùng loss (0,55714 rồi 0,30289) và cùng độ chính xác 92,70 %.
+Cả hai có cùng đường loss và cùng độ chính xác 96,16 %.
 
 ## 3. Phép nhân ma trận là nút thắt tính toán
 
@@ -95,82 +99,84 @@ phép nhân ma trận sẽ giảm trực tiếp phần tính toán của mỗi b
 ## 4. Chi phí truyền thông và tăng tốc trên 2 GPU
 
 `train_dp` báo thời gian mỗi epoch và tỉ lệ truyền thông không được che (từ lúc kết thúc lan truyền
-ngược đến lúc allreduce xong trên GPU 0) trong mỗi bước:
+ngược đến lúc allreduce xong trên GPU 0) trong mỗi bước. Trung vị 3 lần chạy, khoảng min–max trong
+ngoặc; "ổn định" = trung vị các epoch 2–10 (epoch 1 có thời gian khởi động):
 
-| Cấu hình | Trung bình 2 epoch (s) | Chỉ epoch 2 (s) | Truyền thông không được che |
+| Cấu hình | Epoch ổn định (s) | Tăng tốc so với 1 GPU | Truyền thông không được che |
 |---|---|---|---|
-| 1 GPU | 0,267 | 0,208 | 0,4 % |
-| host_ref | 0,463 | 0,436 | 68,5 % |
-| host_ref + overlap | 0,451 | 0,452 | 71,3 % |
-| tree | 0,243 | 0,234 | 46,8 % |
-| tree + overlap | 0,234 | 0,233 | 49,9 % |
-| ring | 0,250 | 0,231 | 50,3 % |
-| ring + overlap | 0,234 | 0,234 | 50,3 % |
-| rd | 0,251 | 0,233 | 48,4 % |
-| rd + overlap | 0,232 | 0,231 | 49,9 % |
+| 1 GPU | 0,199 (0,199–0,200) | 1,00× | 0,5 % |
+| host_ref | 0,420 (0,420–0,420) | 0,47× | 74,9 % |
+| host_ref + overlap | 0,433 (0,431–0,436) | 0,46× | 71,6 % |
+| tree | 0,225 (0,225–0,227) | 0,88× | 50,9 % |
+| tree + overlap | 0,227 (0,226–0,227) | 0,88× | 50,4 % |
+| ring | 0,225 (0,223–0,225) | 0,88× | 49,8 % |
+| ring + overlap | 0,227 (0,226–0,228) | 0,88× | 50,9 % |
+| rd | 0,228 (0,224–0,229) | 0,87× | 50,1 % |
+| rd + overlap | 0,224 (0,224–0,225) | 0,89× | 49,7 % |
 
 Nhận xét:
 
 - Khoảng một nửa mỗi bước 2 GPU là truyền thông. Trong benchmark (mục 5), một lần allreduce
-  gradient 1,63 MB của mô hình mất 0,36–0,39 ms, nên truyền thông tốn gần bằng phần tính toán tiết
-  kiệm được khi chia batch.
-- Thực hiện phép gom trên GPU thay vì CPU giảm một nửa thời gian mỗi epoch (0,46 s xuống
-  0,23–0,25 s) và giảm truyền thông không được che từ 68,5 % xuống khoảng 50 %.
-- `--overlap` không làm giảm tỉ lệ truyền thông không được che (vẫn khoảng 50 %); MLP hai lớp còn quá
-  ít việc lan truyền ngược để che truyền thông. Trung bình 2 epoch thấp hơn một chút, nhưng nếu chỉ
-  xét epoch 2 thì chênh lệch dưới 2 %, nằm trong mức nhiễu.
-- Ở trạng thái ổn định (epoch 2), 2 GPU chậm hơn 1 GPU khoảng 10 %. Trung bình 2 epoch cho
-  1,06–1,15 lần, nhưng chỉ vì epoch đầu của lần chạy 1 GPU có thời gian khởi động (0,326 s rồi
-  0,208 s).
+  gradient 1,63 MB mất 0,36–0,39 ms trên GPU, nên truyền thông tốn gần bằng phần tính toán tiết
+  kiệm được khi chia batch, và 2 GPU chậm hơn 1 GPU khoảng 12 %.
+- Thực hiện phép gom trên GPU thay vì CPU giảm một nửa thời gian mỗi epoch (0,420 s xuống
+  0,225 s) và giảm truyền thông không được che từ 75 % xuống khoảng 50 %. Allreduce 1,63 MB qua
+  CPU mất 1,19 ms, gấp ba lần các phương pháp trên GPU.
+- Khi huấn luyện, tree, ring và rd chênh nhau dưới 2 % và khoảng giá trị qua 3 lần lặp chồng lên
+  nhau, nên số đo không xếp hạng được chúng ở kích thước thông điệp này.
+- `--overlap` không tạo khác biệt đo được (trong khoảng ±1 %); MLP hai lớp còn quá ít việc lan
+  truyền ngược để che truyền thông.
+- Các lần lặp rất ổn định: 3 lần chạy của mỗi cấu hình chênh nhau tối đa 2 %.
 
 ## 5. Allreduce thuần: thuật toán nào thắng ở kích thước nào
 
-Thời gian trung vị mỗi lần allreduce, k = 2, ms (`allreduce.csv`); chữ đậm là nhanh nhất:
+Thời gian trung vị mỗi lần allreduce, k = 2, ms ([`allreduce.csv`](runs/kaggle-final-2026-11-22/allreduce.csv)); chữ đậm là nhanh nhất:
 
-| Kích thước | tree | ring | rd |
-|---|---|---|---|
-| 4 KB | **0,031** | 0,053 | 0,034 |
-| 8 KB | **0,031** | 0,054 | 0,035 |
-| 16 KB | 0,041 | 0,053 | **0,035** |
-| 64 KB | 0,053 | 0,060 | **0,037** |
-| 256 KB | 0,101 | 0,100 | **0,076** |
-| 1 MB | 0,261 | 0,258 | **0,238** |
-| 2 MB | 0,486 | 0,481 | **0,456** |
-| 4 MB | 0,971 | **0,927** | 0,955 |
-| 16 MB | 3,776 | **3,608** | 3,750 |
-| 64 MB | 15,009 | **14,301** | 14,981 |
+| Kích thước | host_ref | tree | ring | rd |
+|---|---|---|---|---|
+| 4 KB | **0,025** | 0,029 | 0,053 | 0,032 |
+| 8 KB | **0,029** | 0,030 | 0,052 | 0,032 |
+| 16 KB | 0,039 | 0,040 | 0,053 | **0,034** |
+| 64 KB | 0,064 | 0,052 | 0,060 | **0,038** |
+| 256 KB | 0,212 | 0,101 | 0,098 | **0,078** |
+| 1 MB | 0,779 | 0,262 | 0,272 | **0,237** |
+| 2 MB | 1,518 | 0,486 | 0,482 | **0,456** |
+| 4 MB | 3,005 | 0,970 | **0,926** | 0,955 |
+| 16 MB | 11,970 | 3,787 | **3,608** | 3,747 |
+| 64 MB | 47,980 | 15,001 | **14,298** | 14,979 |
 
-Băng thông bus ở 64 MB: tree 4,47, ring 4,69, rd 4,48 GB/s. Một lần chép P2P một chiều đạt 9,9 GB/s.
+Băng thông bus ở 64 MB: host_ref 1,40, tree 4,47, ring 4,69, rd 4,48 GB/s. Một lần chép P2P một
+chiều đạt 9,9 GB/s (`runs/kaggle-2026-11-22/`).
 
-- **Thông điệp nhỏ bị giới hạn bởi độ trễ.** Ring có mức sàn khoảng 0,053 ms vì phải chạy nhiều bước
-  phụ thuộc nhau; tree và rd bắt đầu từ khoảng 0,031–0,035 ms.
+- **Thông điệp nhỏ bị giới hạn bởi độ trễ.** Với 4–8 KB, hai lần chép nhỏ qua CPU nhanh hơn một chút
+  so với mọi phương pháp trên GPU. Ring có mức sàn khoảng 0,053 ms vì phải chạy nhiều bước phụ thuộc
+  nhau; tree và rd bắt đầu từ khoảng 0,029–0,034 ms.
 - **Thông điệp vừa (16 KB–2 MB) thì recursive doubling nhanh nhất**, hơn tới 30 % ở 64 KB và 5–10 %
   ở 1–2 MB. Gradient 1,63 MB của mô hình nằm trong khoảng này.
-- **Thông điệp lớn bị giới hạn bởi băng thông và ring nhanh nhất**, nhưng chỉ hơn 4–5 %.
-- **Cả ba chỉ đạt khoảng một nửa tốc độ đường truyền.** Tree phải gửi dữ liệu đi một chiều rồi gửi
-  về, nên một nửa là giới hạn của nó. Ring và rd về lý thuyết có thể dùng cả hai chiều cùng lúc
-  nhưng không vượt được mức đó, cho thấy hai chiều không chạy chồng lên nhau và ring cần pipeline
-  theo khối.
-- Với k = 2, ba thuật toán truyền cùng một lượng dữ liệu. Khác biệt lý thuyết giữa chúng chỉ thể hiện
-  khi k ≥ 4.
+- **Thông điệp lớn bị giới hạn bởi băng thông và ring nhanh nhất**, nhưng chỉ hơn 4–5 %. Đường qua
+  CPU chậm hơn các phương pháp GPU 3,3 lần ở đây (1,4 so với 4,5–4,7 GB/s).
+- **Các phương pháp GPU chỉ đạt khoảng một nửa tốc độ đường truyền.** Tree phải gửi dữ liệu đi một
+  chiều rồi gửi về, nên một nửa là giới hạn của nó. Ring và rd về lý thuyết có thể dùng cả hai chiều
+  cùng lúc nhưng không vượt được mức đó, cho thấy hai chiều không chạy chồng lên nhau và ring cần
+  pipeline theo khối.
+- **Lặp lại được.** Số liệu khớp với lần chạy 2 epoch trước đó trên một máy Kaggle khác, sai khác
+  dưới 0,3 % với thông điệp từ 4 MB trở lên và dưới 9 % với thông điệp nhỏ.
+- Với k = 2, ba thuật toán GPU truyền cùng một lượng dữ liệu. Khác biệt lý thuyết giữa chúng chỉ thể
+  hiện khi k ≥ 4.
 
 ## Hạn chế
 
-- **Chỉ một lần chạy, 2 epoch.** Khác biệt giữa tree, ring và rd khi huấn luyện (dưới 4 % thời gian
-  epoch) nằm trong mức nhiễu giữa các lần chạy. Số liệu cuối cùng nên dùng mặc định 10 epoch, báo
-  cáo riêng epoch 1, và lặp mỗi cấu hình ít nhất 3 lần.
 - **Chỉ có 2 GPU.** Kaggle cung cấp tối đa 2× T4, nên không kiểm chứng được sự tăng theo k của
   O(L·k) + O(k·p/B).
-- **Truy cập P2P khác nhau giữa các máy Kaggle.** Lần chạy này có P2P. Một máy Kaggle trước đó không
-  có (ma trận P2P toàn 0); khi đó việc chép giữa GPU phải đi qua bộ nhớ host và số liệu không so sánh
-  được (1 GPU 0,24 s/epoch, `host_ref` 0,41 s/epoch với 64 % truyền thông). Luôn ghi lại ma trận P2P
-  cùng kết quả.
-- **T4 hạ xung khi nóng hoặc chạm giới hạn công suất.** T4 là card 70 W tản nhiệt thụ động, tự giảm
-  xung khi tải kéo dài. Xung nhịp không được ghi lại trong lúc chạy nên không loại trừ được khả năng
-  này.
-- **Phiên bản mã nguồn.** Log huấn luyện 2 GPU được build từ nhánh `ltnaphixay/allreduce-cuda` của
-  `infinityrbx/High-Performance-Computing`. README chỉ báo cáo các số liệu mà mã nguồn trong repo này
-  cũng tạo ra (thời gian epoch, tỉ lệ truyền thông không được che, độ chính xác, benchmark allreduce).
+- **Mô hình nhỏ.** Với gradient 1,63 MB và dưới 1 ms tính toán mỗi bước, truyền thông chiếm ưu thế.
+  Một mô hình lớn hơn sẽ dịch cán cân về phía tính toán và cho tăng tốc thật trên 2 GPU.
+- **Truy cập P2P khác nhau giữa các máy Kaggle.** Có máy Kaggle 2× T4 có truy cập P2P, có máy không;
+  khi không có, việc chép giữa GPU phải đi qua bộ nhớ host và số liệu không so sánh được. Luôn ghi
+  lại ma trận P2P cùng kết quả (job đã tự ghi).
+- **Xung nhịp T4 được kiểm tra, không được cố định.** Khi có tải, xung SM giữ ở mức tối đa 1.590 MHz
+  (trung vị) trên cả hai GPU, công suất trung vị 48 W, nhiệt độ tối đa 82 °C. Driver báo chạm giới
+  hạn công suất ở 5 trên 105 mẫu có tải của GPU 0 và không lần nào ở GPU 1, nên việc hạ xung ảnh
+  hưởng rất ít.
 
 ## Build và chạy
 
@@ -193,6 +199,8 @@ Trên Kaggle (điền username vào `kernel-metadata.json` trước):
 ```bash
 kaggle kernels push -p scripts/kaggle/check --accelerator NvidiaTeslaT4    # build, kiểm tra, huấn luyện, benchmark
 kaggle kernels push -p scripts/kaggle/profile --accelerator NvidiaTeslaT4  # profile thời gian kernel bằng nsys
+kaggle kernels push -p scripts/kaggle/final --accelerator NvidiaTeslaT4    # lần chạy cuối: 10 epoch x 3 lần, ghi xung nhịp
+python3 scripts/summarize_runs.py results/final.log results/clocks.csv     # bảng trung vị từ lần chạy đó
 ```
 
 Các thiết lập cố định nằm trong `src/common/config.h`. Mọi file CSV có cùng các cột:
@@ -209,7 +217,7 @@ src/
   allreduce/  allreduce.h (giao diện), ar_sync.h, common.cu, registry.cu, mỗi phương pháp một file
 bench/        bench_allreduce.cu: kiểm tra tính đúng + đo độ trễ/băng thông
 tests/        sim_allreduce.cpp + CUDA runtime giả lập (make simcheck)
-scripts/      run_experiments.sh, flops.py, kernel_share.py, get_mnist.sh
-  kaggle/     check/ (build, kiểm tra, huấn luyện, benchmark), profile/ (profile kernel bằng nsys)
+scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, get_mnist.sh
+  kaggle/     check/ (kiểm tra nhanh), profile/ (profile kernel bằng nsys), final/ (lần chạy cuối)
 runs/         log và CSV gốc từ Kaggle
 ```
