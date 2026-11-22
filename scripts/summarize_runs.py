@@ -46,20 +46,21 @@ def fmt(vals, f="{:.3f}"):
 base_loss = by["1 GPU"][0]["loss"] if "1 GPU" in by else None
 steady1 = st.median([st.median(r["ep"][1:]) for r in by.get("1 GPU", [])]) if "1 GPU" in by else None
 
-print("| Config | Runs | Mean epoch (s) | Steady epoch, 2..E (s) | Speedup vs 1 GPU (steady) | Exposed comm (%) | Test acc | Max loss diff vs 1 GPU | Replicas |")
-print("|---|---|---|---|---|---|---|---|---|")
-for cfg, rs in by.items():
-    mean_ep = [sum(r["ep"]) / len(r["ep"]) for r in rs]
-    steady = [st.median(r["ep"][1:]) for r in rs if len(r["ep"]) > 1]
-    sp = f"{steady1 / st.median(steady):.2f}×" if steady1 and steady else "–"
-    comm = [r["comm"] for r in rs if "comm" in r]
-    acc = [100 * r["acc"] for r in rs if "acc" in r]
-    diff = "–"
-    if base_loss:
-        d = [max(abs(a - b) for a, b in zip(r["loss"], base_loss)) for r in rs]
-        diff = f"{max(d):.1e}"
-    repl = ", ".join(sorted({r.get("repl", "–") for r in rs}))
-    print(f"| {cfg} | {len(rs)} | {fmt(mean_ep)} | {fmt(steady)} | {sp} | {fmt(comm, '{:.1f}')} | {fmt(acc, '{:.2f}')} | {diff} | {repl} |")
+if by:
+    print("| Config | Runs | Mean epoch (s) | Steady epoch, 2..E (s) | Speedup vs 1 GPU (steady) | Exposed comm (%) | Test acc | Max loss diff vs 1 GPU | Replicas |")
+    print("|---|---|---|---|---|---|---|---|---|")
+    for cfg, rs in by.items():
+        mean_ep = [sum(r["ep"]) / len(r["ep"]) for r in rs]
+        steady = [st.median(r["ep"][1:]) for r in rs if len(r["ep"]) > 1]
+        sp = f"{steady1 / st.median(steady):.2f}×" if steady1 and steady else "–"
+        comm = [r["comm"] for r in rs if "comm" in r]
+        acc = [100 * r["acc"] for r in rs if "acc" in r]
+        diff = "–"
+        if base_loss:
+            d = [max(abs(a - b) for a, b in zip(r["loss"], base_loss)) for r in rs]
+            diff = f"{max(d):.1e}"
+        repl = ", ".join(sorted({r.get("repl", "–") for r in rs}))
+        print(f"| {cfg} | {len(rs)} | {fmt(mean_ep)} | {fmt(steady)} | {sp} | {fmt(comm, '{:.1f}')} | {fmt(acc, '{:.2f}')} | {diff} | {repl} |")
 
 if len(sys.argv) > 2:
     # Only samples under load (power >= 30 W); idle samples during build and download would hide throttling.

@@ -12,7 +12,8 @@ All numbers come from Kaggle, 2× Tesla T4, with the fixed settings (10 epochs) 
 configuration, built from this repository (commit 3fd2b8a). Results and raw CSVs:
 [`runs/kaggle-final-2026-11-22/`](runs/kaggle-final-2026-11-22/) (training and allreduce, with
 [`summary.md`](runs/kaggle-final-2026-11-22/summary.md)) and
-[`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (kernel profile). An earlier
+[`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (kernel profile) and
+[`runs/kaggle-sweep-2026-11-23/`](runs/kaggle-sweep-2026-11-23/) (batch-size sweep). An earlier
 2-epoch run is kept in [`runs/kaggle-2026-11-22/`](runs/kaggle-2026-11-22/).
 
 ## Summary
@@ -23,7 +24,7 @@ configuration, built from this repository (commit 3fd2b8a). Results and raw CSVs
 | Is a GPU faster than a CPU for training? | Yes. 1 T4: 0.199 s per epoch; sequential C on one CPU core: 8.19 s. About **41×**. |
 | Is matrix multiplication the bottleneck? | Yes. 99.7 % of the FLOPs and **94.5–95.5 % of GPU kernel time** (nsys). |
 | How much does communication cost? | About **half of every 2-GPU step** (50–51 % exposed communication) with tree, ring and rd; 75 % through the CPU. One allreduce of the 1.63 MB gradient takes 0.36–0.39 ms on the GPUs, 1.19 ms through the CPU. |
-| Do 2 GPUs beat 1? | No, not at this model size. A steady-state epoch takes 0.224–0.228 s on 2 GPUs against 0.199 s on 1 GPU (0.87–0.89×), because communication costs about as much as the compute saved by splitting the batch. |
+| Do 2 GPUs beat 1? | It depends on the batch size. At the default batch of 256, no: 0.87–0.89×, because communication costs about as much as the compute saved by splitting the batch. From a batch of 1024 up, yes: 1.33× at 1024, 1.53× at 2048 and up to **1.60×** at 4096 (section 6). |
 | Which allreduce wins? | In the raw benchmark: host_ref at 4–8 KB, recursive doubling from 16 KB to 2 MB, ring from 4 MB up. In training, tree, ring and rd are within 2 % of each other and their repeat ranges overlap, so none wins. |
 
 ## Setup
@@ -164,12 +165,45 @@ reaches 9.9 GB/s (`runs/kaggle-2026-11-22/`).
 - With k = 2, the three GPU algorithms move the same amount of data. Their textbook differences
   only show at k ≥ 4.
 
+## 6. When do 2 GPUs pay off? Batch-size sweep
+
+The gradient is always 1.63 MB, so communication per step is fixed (about 0.4 ms), while the
+compute per step grows with the batch. A larger global batch therefore shrinks the share of time
+spent communicating. Sweep on 2× T4, 5 epochs, 3 repeats, steady-state epoch time
+([`runs/kaggle-sweep-2026-11-23/`](runs/kaggle-sweep-2026-11-23/summary.md)):
+
+| Global batch | 1 GPU, time per step (ms) | Speedup, tree | Speedup, ring | Speedup, rd | Exposed comm, tree / ring / rd |
+|---|---|---|---|---|---|
+| 256 | 0.85 | 0.87× | 0.88× | 0.88× | 54 / 50 / 50 % |
+| 1024 | 3.27 | 1.33× | 1.33× | 1.34× | 36 / 22 / 23 % |
+| 2048 | 6.76 | 1.50× | 1.53× | 1.53× | 27 / 13 / 13 % |
+| 4096 | 14.11 | 1.55× | 1.59× | **1.60×** | 22 / 7 / 7 % |
+| 8192 | 29.29 | 1.55× | 1.57× | 1.59× | 21 / 5 / 5 % |
+
+- **Crossover between 256 and 1024.** Below that, communication outweighs the saved compute; above
+  it, 2 GPUs win, and the speedup levels off at about 1.6×.
+- **Why not 2×.** Communication becomes small (5–7 % with ring and rd), but each step also gathers
+  the whole global batch on the host and copies it to the GPUs, and that part does not shrink
+  with more GPUs (Amdahl's law).
+- **Ring and rd beat tree once compute dominates.** At batch 256 the three tie. From 1024 up, tree
+  exposes 3–4× more communication (21–36 % against 5–23 %) and is 2–4 % slower. Tree serialises the
+  work on GPU 0 (receive, add, scale, send back), while ring and rd split it between both GPUs. The
+  exact cause of tree's extra exposed time was not isolated.
+- **This matches the paper.** Hegde & Usmani (section 3.2, figure 2) also find that the speedup
+  grows with batch size.
+- **Trade-off: accuracy per epoch drops** with larger batches at a fixed learning rate and epoch
+  count (94.7 % at 256, 85.2 % at 8192 after 5 epochs), because there are fewer updates per epoch.
+  The sweep measures speed, not the best batch size for accuracy.
+- Under the heavier load the T4s hit their power cap more often (31 of 91 samples on GPU 0), but
+  the median SM clock stayed at the 1,590 MHz maximum.
+
 ## Limitations
 
 - **Only 2 GPUs.** Kaggle offers at most 2× T4, so the O(L·k) + O(k·p/B) scaling in k cannot be
   tested.
-- **Small model.** With 1.63 MB of gradient and under 1 ms of compute per step, communication
-  dominates. A larger model would shift the balance toward compute and show a real 2-GPU speedup.
+- **Small model.** With 1.63 MB of gradient and under 1 ms of compute per step at the default batch,
+  communication dominates. The batch-size sweep (section 6) shows the speedup once compute per step
+  grows; larger batches cost accuracy per epoch at the fixed learning rate.
 - **P2P access varies between Kaggle machines.** Some Kaggle 2× T4 machines have peer access and
   some do not; without it, peer copies are staged through host memory and the numbers are not
   comparable. Always record the P2P matrix with the results (the job logs it).
@@ -201,6 +235,7 @@ kaggle kernels push -p scripts/kaggle/check --accelerator NvidiaTeslaT4    # bui
 kaggle kernels push -p scripts/kaggle/profile --accelerator NvidiaTeslaT4  # nsys kernel-time profile
 kaggle kernels push -p scripts/kaggle/final --accelerator NvidiaTeslaT4    # final run: 10 epochs x 3 repeats, clock log
 python3 scripts/summarize_runs.py results/final.log results/clocks.csv     # median table from that run
+kaggle kernels push -p scripts/kaggle/sweep --accelerator NvidiaTeslaT4    # batch-size sweep, 1 vs 2 GPUs
 ```
 
 Fixed settings live in `src/common/config.h`. CSV columns everywhere:
@@ -217,7 +252,7 @@ src/
   allreduce/  allreduce.h (interface), ar_sync.h, common.cu, registry.cu, one file per method
 bench/        bench_allreduce.cu: correctness + latency/bandwidth benchmark
 tests/        sim_allreduce.cpp + mock CUDA runtime (make simcheck)
-scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, get_mnist.sh
-  kaggle/     check/ (quick check), profile/ (nsys kernel profile), final/ (final run)
+scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, summarize_sweep.py, get_mnist.sh
+  kaggle/     check/ (quick check), profile/ (nsys kernel profile), final/ (final run), sweep/ (batch sweep)
 runs/         raw Kaggle logs and CSVs
 ```

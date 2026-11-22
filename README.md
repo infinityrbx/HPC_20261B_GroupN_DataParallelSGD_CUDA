@@ -12,7 +12,8 @@ Mọi số liệu đo trên Kaggle, 2× Tesla T4, với thiết lập cố đị
 build từ chính repo này (commit 3fd2b8a). Kết quả và CSV gốc:
 [`runs/kaggle-final-2026-11-22/`](runs/kaggle-final-2026-11-22/) (huấn luyện và allreduce, kèm
 [`summary.md`](runs/kaggle-final-2026-11-22/summary.md)) và
-[`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (profile kernel). Lần chạy
+[`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (profile kernel) và
+[`runs/kaggle-sweep-2026-11-23/`](runs/kaggle-sweep-2026-11-23/) (quét kích thước batch). Lần chạy
 2 epoch trước đó được giữ trong [`runs/kaggle-2026-11-22/`](runs/kaggle-2026-11-22/).
 
 ## Tóm tắt
@@ -23,7 +24,7 @@ build từ chính repo này (commit 3fd2b8a). Kết quả và CSV gốc:
 | GPU có nhanh hơn CPU khi huấn luyện không? | Có. 1 T4: 0,199 s/epoch; bản C tuần tự trên một nhân CPU: 8,19 s. Nhanh khoảng **41 lần**. |
 | Phép nhân ma trận có phải nút thắt cổ chai không? | Có. Chiếm 99,7 % số FLOP và **94,5–95,5 % thời gian kernel trên GPU** (đo bằng nsys). |
 | Truyền thông tốn bao nhiêu? | Khoảng **một nửa mỗi bước khi dùng 2 GPU** (50–51 % truyền thông không được che) với tree, ring và rd; 75 % nếu đi qua CPU. Một lần allreduce gradient 1,63 MB mất 0,36–0,39 ms trên GPU, 1,19 ms qua CPU. |
-| 2 GPU có nhanh hơn 1 GPU không? | Không, với mô hình nhỏ này. Mỗi epoch ổn định mất 0,224–0,228 s trên 2 GPU so với 0,199 s trên 1 GPU (0,87–0,89 lần), vì truyền thông tốn gần bằng phần tính toán tiết kiệm được khi chia batch. |
+| 2 GPU có nhanh hơn 1 GPU không? | Tùy kích thước batch. Với batch mặc định 256 thì không: 0,87–0,89 lần, vì truyền thông tốn gần bằng phần tính toán tiết kiệm được khi chia batch. Từ batch 1024 trở lên thì có: 1,33 lần ở 1024, 1,53 lần ở 2048 và tới **1,60 lần** ở 4096 (mục 6). |
 | Thuật toán allreduce nào nhanh nhất? | Trong benchmark: host_ref ở 4–8 KB, recursive doubling từ 16 KB đến 2 MB, ring từ 4 MB trở lên. Khi huấn luyện, tree, ring và rd chênh nhau dưới 2 % và khoảng giá trị qua các lần lặp chồng lên nhau, nên không có thuật toán nào thắng. |
 
 ## Cấu hình thí nghiệm
@@ -164,12 +165,44 @@ chiều đạt 9,9 GB/s (`runs/kaggle-2026-11-22/`).
 - Với k = 2, ba thuật toán GPU truyền cùng một lượng dữ liệu. Khác biệt lý thuyết giữa chúng chỉ thể
   hiện khi k ≥ 4.
 
+## 6. Khi nào 2 GPU có lợi? Quét kích thước batch
+
+Gradient luôn là 1,63 MB nên chi phí truyền thông mỗi bước cố định (khoảng 0,4 ms), trong khi phần
+tính toán mỗi bước tăng theo batch. Vì vậy batch toàn cục càng lớn thì tỉ lệ thời gian dành cho
+truyền thông càng nhỏ. Quét trên 2× T4, 5 epoch, lặp 3 lần, thời gian epoch ổn định
+([`runs/kaggle-sweep-2026-11-23/`](runs/kaggle-sweep-2026-11-23/summary.md)):
+
+| Batch toàn cục | 1 GPU, thời gian mỗi bước (ms) | Tăng tốc, tree | Tăng tốc, ring | Tăng tốc, rd | Truyền thông không được che, tree / ring / rd |
+|---|---|---|---|---|---|
+| 256 | 0,85 | 0,87× | 0,88× | 0,88× | 54 / 50 / 50 % |
+| 1024 | 3,27 | 1,33× | 1,33× | 1,34× | 36 / 22 / 23 % |
+| 2048 | 6,76 | 1,50× | 1,53× | 1,53× | 27 / 13 / 13 % |
+| 4096 | 14,11 | 1,55× | 1,59× | **1,60×** | 22 / 7 / 7 % |
+| 8192 | 29,29 | 1,55× | 1,57× | 1,59× | 21 / 5 / 5 % |
+
+- **Điểm hòa vốn nằm giữa 256 và 1024.** Dưới đó, truyền thông lớn hơn phần tính toán tiết kiệm được;
+  trên đó, 2 GPU thắng và tăng tốc bão hòa ở khoảng 1,6 lần.
+- **Vì sao không đạt 2 lần.** Truyền thông trở nên nhỏ (5–7 % với ring và rd), nhưng mỗi bước vẫn
+  phải gom cả batch toàn cục trên host và chép lên GPU, và phần đó không giảm khi thêm GPU (định luật
+  Amdahl).
+- **Ring và rd nhanh hơn tree khi tính toán chiếm ưu thế.** Ở batch 256 cả ba ngang nhau. Từ 1024 trở
+  lên, tree có thời gian truyền thông không được che gấp 3–4 lần (21–36 % so với 5–23 %) và chậm hơn
+  2–4 %. Tree dồn công việc lên GPU 0 (nhận, cộng, chia, gửi lại), còn ring và rd chia đều cho cả hai
+  GPU. Nguyên nhân chính xác của phần thời gian thêm của tree chưa được tách riêng.
+- **Khớp với bài báo.** Hegde & Usmani (mục 3.2, hình 2) cũng thấy tăng tốc tăng theo kích thước batch.
+- **Đánh đổi: độ chính xác sau cùng số epoch giảm** khi batch lớn với learning rate cố định (94,7 % ở
+  256, 85,2 % ở 8192 sau 5 epoch), vì số lần cập nhật mỗi epoch ít hơn. Phép quét đo tốc độ, không
+  tìm batch tốt nhất cho độ chính xác.
+- Khi tải nặng hơn, T4 chạm giới hạn công suất thường hơn (31 trên 91 mẫu ở GPU 0), nhưng xung SM
+  trung vị vẫn ở mức tối đa 1.590 MHz.
+
 ## Hạn chế
 
 - **Chỉ có 2 GPU.** Kaggle cung cấp tối đa 2× T4, nên không kiểm chứng được sự tăng theo k của
   O(L·k) + O(k·p/B).
-- **Mô hình nhỏ.** Với gradient 1,63 MB và dưới 1 ms tính toán mỗi bước, truyền thông chiếm ưu thế.
-  Một mô hình lớn hơn sẽ dịch cán cân về phía tính toán và cho tăng tốc thật trên 2 GPU.
+- **Mô hình nhỏ.** Với gradient 1,63 MB và dưới 1 ms tính toán mỗi bước ở batch mặc định, truyền
+  thông chiếm ưu thế. Phép quét batch (mục 6) cho thấy tăng tốc khi phần tính toán mỗi bước lớn lên;
+  batch lớn hơn làm giảm độ chính xác sau cùng số epoch với learning rate cố định.
 - **Truy cập P2P khác nhau giữa các máy Kaggle.** Có máy Kaggle 2× T4 có truy cập P2P, có máy không;
   khi không có, việc chép giữa GPU phải đi qua bộ nhớ host và số liệu không so sánh được. Luôn ghi
   lại ma trận P2P cùng kết quả (job đã tự ghi).
@@ -201,6 +234,7 @@ kaggle kernels push -p scripts/kaggle/check --accelerator NvidiaTeslaT4    # bui
 kaggle kernels push -p scripts/kaggle/profile --accelerator NvidiaTeslaT4  # profile thời gian kernel bằng nsys
 kaggle kernels push -p scripts/kaggle/final --accelerator NvidiaTeslaT4    # lần chạy cuối: 10 epoch x 3 lần, ghi xung nhịp
 python3 scripts/summarize_runs.py results/final.log results/clocks.csv     # bảng trung vị từ lần chạy đó
+kaggle kernels push -p scripts/kaggle/sweep --accelerator NvidiaTeslaT4    # quét batch, 1 so với 2 GPU
 ```
 
 Các thiết lập cố định nằm trong `src/common/config.h`. Mọi file CSV có cùng các cột:
@@ -217,7 +251,7 @@ src/
   allreduce/  allreduce.h (giao diện), ar_sync.h, common.cu, registry.cu, mỗi phương pháp một file
 bench/        bench_allreduce.cu: kiểm tra tính đúng + đo độ trễ/băng thông
 tests/        sim_allreduce.cpp + CUDA runtime giả lập (make simcheck)
-scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, get_mnist.sh
-  kaggle/     check/ (kiểm tra nhanh), profile/ (profile kernel bằng nsys), final/ (lần chạy cuối)
+scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, summarize_sweep.py, get_mnist.sh
+  kaggle/     check/ (kiểm tra nhanh), profile/ (profile kernel bằng nsys), final/ (lần chạy cuối), sweep/ (quét batch)
 runs/         log và CSV gốc từ Kaggle
 ```
