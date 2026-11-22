@@ -29,7 +29,7 @@ sh("git log -1 --format='commit %H %s'")
 sh("nvidia-smi; nvidia-smi topo -m")
 clocks = subprocess.Popen(
     "nvidia-smi --query-gpu=timestamp,index,clocks.sm,clocks.mem,power.draw,temperature.gpu,"
-    "clocks_event_reasons.active --format=csv -l 1 > results/clocks.csv", shell=True)
+    "clocks_throttle_reasons.active --format=csv -l 1 > results/clocks.csv", shell=True)
 sh("make data && make ARCH=sm_75")
 for B in BATCHES:
     for r in range(REPEATS):

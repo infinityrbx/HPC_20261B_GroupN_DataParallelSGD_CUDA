@@ -13,7 +13,7 @@ KS=$(for k in 2 4 8; do [ "$k" -le "$NGPU" ] && echo "$k"; done)
 echo "GPUs: $NGPU, k values: 1 $KS"
 git log -1 --format='commit %H %s'
 nvidia-smi; nvidia-smi topo -m; nvcc --version
-nvidia-smi --query-gpu=timestamp,index,clocks.sm,power.draw,temperature.gpu,clocks_event_reasons.active \
+nvidia-smi --query-gpu=timestamp,index,clocks.sm,power.draw,temperature.gpu,clocks_throttle_reasons.active \
   --format=csv -l 1 > results/clocks.csv & CLK=$!
 make data && make ARCH="$ARCH" && make simcheck
 for k in $KS; do
