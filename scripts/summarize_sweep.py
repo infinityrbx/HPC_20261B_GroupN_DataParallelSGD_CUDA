@@ -12,7 +12,7 @@ for line in open(sys.argv[1], errors="replace"):
     m = re.match(r"method=(\S+) k=(\d+) overlap=(\d).*local_batch=(\d+)", line)
     if m:
         name, k, ov, bl = m.group(1), int(m.group(2)), m.group(3) == "1", int(m.group(4))
-        cfg = "1 GPU" if k == 1 else name + (" + overlap" if ov else "")
+        cfg = "1 GPU" if k == 1 else f"{name}{' + overlap' if ov else ''} (k={k})"
         cur = {"cfg": cfg, "B": bl * k, "ep": []}; runs.append(cur); continue
     if cur is None:
         continue
