@@ -17,6 +17,11 @@ void ar_setup(int k) {
         fprintf(stderr, "requested %d GPUs, %d available (max %d)\n", k, count, AR_MAX_GPUS);
         exit(1);
     }
+    /* AR_DISABLE_P2P=1 skips peer access, so peer copies are staged through host memory over PCIe
+       (used to compare NVLink/P2P against plain PCIe on the same machine). */
+    const char *nop2p = getenv("AR_DISABLE_P2P");
+    int allow_p2p = !(nop2p && nop2p[0] == '1');
+    if (!allow_p2p) fprintf(stderr, "AR_DISABLE_P2P=1: peer access off, copies go through host\n");
     for (int i = 0; i < k; i++) {
         CUDA_CHECK(cudaSetDevice(i));
         for (int j = 0; j < k; j++) {
@@ -24,6 +29,7 @@ void ar_setup(int k) {
             if (i == j) continue;
             int can = 0;
             CUDA_CHECK(cudaDeviceCanAccessPeer(&can, i, j));
+            if (!allow_p2p) can = 0;
             if (can) {
                 cudaError_t e = cudaDeviceEnablePeerAccess(j, 0);
                 if (e == cudaErrorPeerAccessAlreadyEnabled) { cudaGetLastError(); e = cudaSuccess; }
@@ -87,11 +93,21 @@ void ar_scale(int dev, float *x, float a, size_t n, cudaStream_t s) {
 static cudaEvent_t g_bar_ev[AR_MAX_GPUS];
 
 void ar_barrier(int k, cudaStream_t *streams) {
+    /* AR_DISABLE_P2P=1 skips peer access, so peer copies are staged through host memory over PCIe
+       (used to compare NVLink/P2P against plain PCIe on the same machine). */
+    const char *nop2p = getenv("AR_DISABLE_P2P");
+    int allow_p2p = !(nop2p && nop2p[0] == '1');
+    if (!allow_p2p) fprintf(stderr, "AR_DISABLE_P2P=1: peer access off, copies go through host\n");
     for (int i = 0; i < k; i++) {
         CUDA_CHECK(cudaSetDevice(i));
         if (!g_bar_ev[i]) CUDA_CHECK(cudaEventCreateWithFlags(&g_bar_ev[i], cudaEventDisableTiming));
         CUDA_CHECK(cudaEventRecord(g_bar_ev[i], streams[i]));
     }
+    /* AR_DISABLE_P2P=1 skips peer access, so peer copies are staged through host memory over PCIe
+       (used to compare NVLink/P2P against plain PCIe on the same machine). */
+    const char *nop2p = getenv("AR_DISABLE_P2P");
+    int allow_p2p = !(nop2p && nop2p[0] == '1');
+    if (!allow_p2p) fprintf(stderr, "AR_DISABLE_P2P=1: peer access off, copies go through host\n");
     for (int i = 0; i < k; i++) {
         CUDA_CHECK(cudaSetDevice(i));
         for (int j = 0; j < k; j++)
