@@ -27,6 +27,16 @@ build từ chính repo này (commit 3fd2b8a). Kết quả và CSV gốc:
 | 2 GPU có nhanh hơn 1 GPU không? | Tùy kích thước batch. Với batch mặc định 256 thì không: 0,87–0,89 lần, vì truyền thông tốn gần bằng phần tính toán tiết kiệm được khi chia batch. Từ batch 1024 trở lên thì có: 1,33 lần ở 1024, 1,53 lần ở 2048 và tới **1,60 lần** ở 4096 (mục 6). |
 | Thuật toán allreduce nào nhanh nhất? | Trong benchmark: host_ref ở 4–8 KB, recursive doubling từ 16 KB đến 2 MB, ring từ 4 MB trở lên. Khi huấn luyện, tree, ring và rd chênh nhau dưới 2 % và khoảng giá trị qua các lần lặp chồng lên nhau, nên không có thuật toán nào thắng. |
 
+## Biểu đồ
+
+Vẽ từ các file CSV trong `runs/` bằng `python3 scripts/make_figures.py` (nhãn trong hình bằng tiếng Anh).
+
+| | |
+|---|---|
+| ![Speedup vs batch size](docs/figures/fig1_speedup_vs_batch.png) | ![Epoch time breakdown](docs/figures/fig5_epoch_breakdown.png) |
+| ![Allreduce time vs message size](docs/figures/fig2_allreduce_time.png) | ![Allreduce bandwidth vs message size](docs/figures/fig3_allreduce_busbw.png) |
+| ![Matmul share of GPU time](docs/figures/fig4_matmul_share.png) | |
+
 ## Cấu hình thí nghiệm
 
 | Mục | Giá trị |

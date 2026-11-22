@@ -27,6 +27,16 @@ configuration, built from this repository (commit 3fd2b8a). Results and raw CSVs
 | Do 2 GPUs beat 1? | It depends on the batch size. At the default batch of 256, no: 0.87–0.89×, because communication costs about as much as the compute saved by splitting the batch. From a batch of 1024 up, yes: 1.33× at 1024, 1.53× at 2048 and up to **1.60×** at 4096 (section 6). |
 | Which allreduce wins? | In the raw benchmark: host_ref at 4–8 KB, recursive doubling from 16 KB to 2 MB, ring from 4 MB up. In training, tree, ring and rd are within 2 % of each other and their repeat ranges overlap, so none wins. |
 
+## Figures
+
+Drawn from the CSVs in `runs/` by `python3 scripts/make_figures.py`.
+
+| | |
+|---|---|
+| ![Speedup vs batch size](docs/figures/fig1_speedup_vs_batch.png) | ![Epoch time breakdown](docs/figures/fig5_epoch_breakdown.png) |
+| ![Allreduce time vs message size](docs/figures/fig2_allreduce_time.png) | ![Allreduce bandwidth vs message size](docs/figures/fig3_allreduce_busbw.png) |
+| ![Matmul share of GPU time](docs/figures/fig4_matmul_share.png) | |
+
 ## Setup
 
 | Item | Value |
