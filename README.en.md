@@ -26,6 +26,7 @@ configuration, built from this repository (commit 3fd2b8a). Results and raw CSVs
 | How much does communication cost? | About **half of every 2-GPU step** (50–51 % exposed communication) with tree, ring and rd; 75 % through the CPU. One allreduce of the 1.63 MB gradient takes 0.36–0.39 ms on the GPUs, 1.19 ms through the CPU. |
 | Do 2 GPUs beat 1? | It depends on the batch size. At the default batch of 256, no: 0.87–0.89×, because communication costs about as much as the compute saved by splitting the batch. From a batch of 1024 up, yes: 1.33× at 1024, 1.53× at 2048 and up to **1.60×** at 4096 (section 6). |
 | Which allreduce wins? | In the raw benchmark: host_ref at 4–8 KB, recursive doubling from 16 KB to 2 MB, ring from 4 MB up. In training, tree, ring and rd are within 2 % of each other and their repeat ranges overlap, so none wins. |
+| Does NVLink fix it, and what about 4 GPUs? | Partly (section 7, 4× A100 SXM). NVLink moves large messages 12–27× faster than going through the host (ring: 157 GB/s against 5.8 GB/s at k=4). At batch 4096, 4 GPUs give up to **1.59×** with NVLink but only 1.23–1.33× through the host. At batch 256 more GPUs are slower even with NVLink, because the small gradient makes each allreduce latency-bound. |
 
 ## Figures
 
@@ -35,7 +36,9 @@ Drawn from the CSVs in `runs/` by `python3 scripts/make_figures.py`.
 |---|---|
 | ![Speedup vs batch size](docs/figures/fig1_speedup_vs_batch.png) | ![Epoch time breakdown](docs/figures/fig5_epoch_breakdown.png) |
 | ![Allreduce time vs message size](docs/figures/fig2_allreduce_time.png) | ![Allreduce bandwidth vs message size](docs/figures/fig3_allreduce_busbw.png) |
-| ![Matmul share of GPU time](docs/figures/fig4_matmul_share.png) | |
+| ![Matmul share of GPU time](docs/figures/fig4_matmul_share.png) | ![Speedup vs number of GPUs, A100](docs/figures/fig7_a100_speedup_vs_k.png) |
+
+![Allreduce bandwidth, NVLink vs via host, A100](docs/figures/fig6_a100_nvlink_vs_host.png)
 
 ## Setup
 
@@ -207,10 +210,73 @@ spent communicating. Sweep on 2× T4, 5 epochs, 3 repeats, steady-state epoch ti
 - Under the heavier load the T4s hit their power cap more often (31 of 91 samples on GPU 0), but
   the median SM clock stayed at the 1,590 MHz maximum.
 
+## 7. More GPUs and a faster link: 4× A100 SXM, NVLink vs PCIe
+
+Kaggle stops at 2 GPUs over PCIe. To test how the cost grows with k and how much the link matters,
+the same code ran on one RunPod machine with 4× A100-SXM4-80GB. Every GPU pair has 12 NVLinks
+(`nvidia-smi topo -m`: NV12 everywhere). Each configuration ran twice on the same machine:
+
+- **NVLink**: peer access on (P2P matrix all 1), GPU-to-GPU copies go over NVLink.
+- **Via host**: `AR_DISABLE_P2P=1`, peer access off, so every copy goes GPU → host memory → GPU over
+  PCIe. This is the slow path a machine without P2P falls back to.
+
+`MODES="p2p host" bash scripts/scaling.sh sm_80`, 5 epochs, 3 repeats, steady-state epoch time.
+Results: [`runs/runpod-a100-2026-11-23/`](runs/runpod-a100-2026-11-23/). These numbers are a
+separate platform with its own 1-GPU baseline: compare speedups, not times, against the T4 results.
+
+**Raw allreduce, 256 MB message (bus bandwidth):**
+
+| k | Link | tree | ring | rd |
+|---|---|---|---|---|
+| 2 | NVLink | 93 GB/s | 154 GB/s | 124 GB/s |
+| 2 | via host | 8.0 GB/s | 9.7 GB/s | 9.5 GB/s |
+| 4 | NVLink | 51 GB/s | **157 GB/s** | 101 GB/s |
+| 4 | via host | 4.0 GB/s | 5.8 GB/s | 4.0 GB/s |
+
+**Raw allreduce at the model's gradient size (1–2 MB), time per call:** NVLink k=2 0.05–0.10 ms,
+k=4 0.15–0.20 ms (tree, rd) and 0.44 ms (ring); via host 0.19–0.40 ms at k=2 and 0.68–1.22 ms at k=4.
+
+**Training speedup vs 1 A100 (steady epoch):**
+
+| Global batch | k | NVLink: tree / ring / rd | Via host: tree / ring / rd |
+|---|---|---|---|
+| 256 | 2 | 0.94× / 0.86× / 0.98× | 0.57× / 0.63× / 0.69× |
+| 256 | 4 | 0.74× / 0.51× / 0.74× | 0.32× / 0.19× / 0.25× |
+| 4096 | 2 | 1.26× / 1.23× / 1.21× | 1.16× / 1.25× / 1.27× |
+| 4096 | 4 | **1.59×** / 1.53× / 1.35× | 1.33× / 1.25× / 1.23× |
+
+What this shows:
+
+- **NVLink is 12–27× faster than going through the host for large messages**, and the gap grows
+  with k: through the host, all GPUs share the same PCIe links to host memory, so bandwidth per GPU
+  drops from k=2 to k=4 (ring 9.7 → 5.8 GB/s), while ring over NVLink holds 154–157 GB/s.
+- **The k-dependent latency term from the paper is visible.** For small and medium messages the time
+  is flat in message size and grows with k: ring at k=4 costs about 0.44 ms up to 2 MB, because it
+  takes 2(k−1) = 6 synchronised steps, against about 0.15 ms for rd (log₂k = 2 steps). This is the
+  O(L·k) term of O(L·k) + O(k·p/B). The 1.63 MB gradient sits in this latency-bound region, which is
+  why rd and tree beat ring in training at batch 256 even over NVLink.
+- **Tree loses bandwidth as k grows** (93 → 51 GB/s over NVLink), because GPU 0 receives and sends
+  every message, as the paper's reduce-to-one-then-broadcast analysis predicts.
+- **At batch 256 more GPUs only slow training down, even with NVLink.** One A100 needs just 0.36 ms
+  per step, less than half a T4's 0.85 ms, so the fixed allreduce cost is an even larger share
+  (exposed communication 29–37 % at k=2 and 50–69 % at k=4 over NVLink, 83–89 % at k=4 via host).
+  A faster GPU makes communication relatively more expensive.
+- **At batch 4096 the link decides whether 4 GPUs help.** With NVLink, k=4 reaches 1.53–1.59×
+  (ring and tree) against 1.21–1.26× at k=2. Via host, k=4 is barely better than k=2 (1.23–1.33× against 1.16–1.27×), and
+  exposed communication rises to 46–54 %. At k=2 the two links give about the same speedup, because
+  the allreduce is small next to the compute.
+- **Still far from 4×.** Even with NVLink, 28–30 % of a k=4 step at batch 4096 is exposed
+  communication, and the host-side batch gather (section 6) does not shrink with k.
+- Accuracy is unchanged by the link (94.7 % at 256, 87.9 % at 4096). The A100s reported no power or
+  thermal throttling, only idle periods between runs.
+- The k=4 bandwidth number for tree is limited by the algorithm, not the link: rd and ring use the
+  same NVLinks at 2–3× the rate.
+
 ## Limitations
 
-- **Only 2 GPUs.** Kaggle offers at most 2× T4, so the O(L·k) + O(k·p/B) scaling in k cannot be
-  tested.
+- **Up to 4 GPUs, on one machine.** Kaggle offers at most 2× T4; the k=4 results come from one
+  RunPod 4× A100 SXM machine (section 7), with one run of 3 repeats. Multi-machine training was
+  not tested.
 - **Small model.** With 1.63 MB of gradient and under 1 ms of compute per step at the default batch,
   communication dominates. The batch-size sweep (section 6) shows the speedup once compute per step
   grows; larger batches cost accuracy per epoch at the fixed learning rate.
@@ -264,5 +330,5 @@ bench/        bench_allreduce.cu: correctness + latency/bandwidth benchmark
 tests/        sim_allreduce.cpp + mock CUDA runtime (make simcheck)
 scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, summarize_sweep.py, get_mnist.sh
   kaggle/     check/ (quick check), profile/ (nsys kernel profile), final/ (final run), sweep/ (batch sweep)
-runs/         raw Kaggle logs and CSVs
+runs/         raw logs and CSVs (Kaggle 2× T4, RunPod 4× A100 SXM)
 ```

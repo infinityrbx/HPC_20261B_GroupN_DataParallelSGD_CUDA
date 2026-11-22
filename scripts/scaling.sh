@@ -7,6 +7,7 @@
 # Writes results/<mode>/{scaling.log,scaling.csv,allreduce_k.csv,scaling_summary.md}
 # and results/topo.txt, results/clocks.csv. About 10-15 minutes per mode.
 set -uo pipefail
+export PATH="/usr/local/cuda/bin:$PATH"
 ARCH="${1:-sm_80}"
 MODES="${MODES:-p2p}"
 EPOCHS=5; REPEATS=3; BATCHES="256 4096"; METHODS="tree ring rd"

@@ -26,6 +26,7 @@ build từ chính repo này (commit 3fd2b8a). Kết quả và CSV gốc:
 | Truyền thông tốn bao nhiêu? | Khoảng **một nửa mỗi bước khi dùng 2 GPU** (50–51 % truyền thông không được che) với tree, ring và rd; 75 % nếu đi qua CPU. Một lần allreduce gradient 1,63 MB mất 0,36–0,39 ms trên GPU, 1,19 ms qua CPU. |
 | 2 GPU có nhanh hơn 1 GPU không? | Tùy kích thước batch. Với batch mặc định 256 thì không: 0,87–0,89 lần, vì truyền thông tốn gần bằng phần tính toán tiết kiệm được khi chia batch. Từ batch 1024 trở lên thì có: 1,33 lần ở 1024, 1,53 lần ở 2048 và tới **1,60 lần** ở 4096 (mục 6). |
 | Thuật toán allreduce nào nhanh nhất? | Trong benchmark: host_ref ở 4–8 KB, recursive doubling từ 16 KB đến 2 MB, ring từ 4 MB trở lên. Khi huấn luyện, tree, ring và rd chênh nhau dưới 2 % và khoảng giá trị qua các lần lặp chồng lên nhau, nên không có thuật toán nào thắng. |
+| NVLink có giải quyết được không, và 4 GPU thì sao? | Một phần (mục 7, 4× A100 SXM). Với thông điệp lớn, NVLink nhanh hơn đi qua host 12–27 lần (ring: 157 GB/s so với 5,8 GB/s ở k=4). Ở batch 4096, 4 GPU đạt tới **1,59 lần** với NVLink nhưng chỉ 1,23–1,33 lần khi qua host. Ở batch 256, thêm GPU vẫn chậm hơn kể cả với NVLink, vì gradient nhỏ khiến mỗi lần allreduce bị chi phối bởi độ trễ. |
 
 ## Biểu đồ
 
@@ -35,7 +36,9 @@ Vẽ từ các file CSV trong `runs/` bằng `python3 scripts/make_figures.py` (
 |---|---|
 | ![Speedup vs batch size](docs/figures/fig1_speedup_vs_batch.png) | ![Epoch time breakdown](docs/figures/fig5_epoch_breakdown.png) |
 | ![Allreduce time vs message size](docs/figures/fig2_allreduce_time.png) | ![Allreduce bandwidth vs message size](docs/figures/fig3_allreduce_busbw.png) |
-| ![Matmul share of GPU time](docs/figures/fig4_matmul_share.png) | |
+| ![Matmul share of GPU time](docs/figures/fig4_matmul_share.png) | ![Speedup vs number of GPUs, A100](docs/figures/fig7_a100_speedup_vs_k.png) |
+
+![Allreduce bandwidth, NVLink vs via host, A100](docs/figures/fig6_a100_nvlink_vs_host.png)
 
 ## Cấu hình thí nghiệm
 
@@ -206,10 +209,73 @@ truyền thông càng nhỏ. Quét trên 2× T4, 5 epoch, lặp 3 lần, thời 
 - Khi tải nặng hơn, T4 chạm giới hạn công suất thường hơn (31 trên 91 mẫu ở GPU 0), nhưng xung SM
   trung vị vẫn ở mức tối đa 1.590 MHz.
 
+## 7. Nhiều GPU hơn và đường truyền nhanh hơn: 4× A100 SXM, NVLink so với PCIe
+
+Kaggle chỉ có tối đa 2 GPU nối qua PCIe. Để kiểm tra chi phí tăng theo k thế nào và đường truyền ảnh
+hưởng bao nhiêu, cùng mã nguồn được chạy trên một máy RunPod có 4× A100-SXM4-80GB. Mỗi cặp GPU có 12
+NVLink (`nvidia-smi topo -m`: NV12 ở mọi ô). Mỗi cấu hình chạy hai lần trên cùng một máy:
+
+- **NVLink**: bật truy cập P2P (ma trận P2P toàn 1), chép giữa GPU đi qua NVLink.
+- **Qua host**: `AR_DISABLE_P2P=1`, tắt truy cập P2P, nên mỗi lần chép đi GPU → bộ nhớ host → GPU qua
+  PCIe. Đây là đường chậm mà máy không có P2P phải dùng.
+
+`MODES="p2p host" bash scripts/scaling.sh sm_80`, 5 epoch, 3 lần lặp, thời gian epoch ổn định.
+Kết quả: [`runs/runpod-a100-2026-11-23/`](runs/runpod-a100-2026-11-23/). Đây là nền tảng riêng với
+mốc 1 GPU riêng: chỉ so sánh tỉ lệ tăng tốc, không so sánh thời gian, với kết quả trên T4.
+
+**Allreduce thuần, thông điệp 256 MB (băng thông bus):**
+
+| k | Đường truyền | tree | ring | rd |
+|---|---|---|---|---|
+| 2 | NVLink | 93 GB/s | 154 GB/s | 124 GB/s |
+| 2 | qua host | 8,0 GB/s | 9,7 GB/s | 9,5 GB/s |
+| 4 | NVLink | 51 GB/s | **157 GB/s** | 101 GB/s |
+| 4 | qua host | 4,0 GB/s | 5,8 GB/s | 4,0 GB/s |
+
+**Allreduce thuần ở kích thước gradient của mô hình (1–2 MB), thời gian mỗi lần gọi:** NVLink k=2
+0,05–0,10 ms, k=4 0,15–0,20 ms (tree, rd) và 0,44 ms (ring); qua host 0,19–0,40 ms ở k=2 và
+0,68–1,22 ms ở k=4.
+
+**Tăng tốc huấn luyện so với 1 A100 (epoch ổn định):**
+
+| Batch tổng | k | NVLink: tree / ring / rd | Qua host: tree / ring / rd |
+|---|---|---|---|
+| 256 | 2 | 0,94× / 0,86× / 0,98× | 0,57× / 0,63× / 0,69× |
+| 256 | 4 | 0,74× / 0,51× / 0,74× | 0,32× / 0,19× / 0,25× |
+| 4096 | 2 | 1,26× / 1,23× / 1,21× | 1,16× / 1,25× / 1,27× |
+| 4096 | 4 | **1,59×** / 1,53× / 1,35× | 1,33× / 1,25× / 1,23× |
+
+Kết quả cho thấy:
+
+- **Với thông điệp lớn, NVLink nhanh hơn đi qua host 12–27 lần**, và khoảng cách tăng theo k: khi đi
+  qua host, mọi GPU dùng chung đường PCIe tới bộ nhớ host, nên băng thông mỗi GPU giảm từ k=2 sang k=4
+  (ring 9,7 → 5,8 GB/s), còn ring qua NVLink giữ 154–157 GB/s.
+- **Thấy rõ số hạng độ trễ phụ thuộc k trong bài báo.** Với thông điệp nhỏ và vừa, thời gian gần như
+  không đổi theo kích thước mà tăng theo k: ring ở k=4 tốn khoảng 0,44 ms cho tới 2 MB vì cần
+  2(k−1) = 6 bước đồng bộ, còn rd chỉ khoảng 0,15 ms (log₂k = 2 bước). Đây là số hạng O(L·k) trong
+  O(L·k) + O(k·p/B). Gradient 1,63 MB nằm trong vùng bị chi phối bởi độ trễ, nên khi huấn luyện ở
+  batch 256, rd và tree nhanh hơn ring kể cả qua NVLink.
+- **Tree mất băng thông khi k tăng** (93 → 51 GB/s qua NVLink), vì GPU 0 phải nhận và gửi mọi thông
+  điệp, đúng như phân tích reduce-về-một-GPU-rồi-broadcast của bài báo.
+- **Ở batch 256, thêm GPU chỉ làm huấn luyện chậm đi, kể cả với NVLink.** Một A100 chỉ cần 0,36 ms
+  mỗi bước, chưa bằng một nửa 0,85 ms của T4, nên chi phí allreduce cố định chiếm tỉ lệ còn lớn hơn
+  (truyền thông không được che 29–37 % ở k=2 và 50–69 % ở k=4 qua NVLink, 83–89 % ở k=4 qua host).
+  GPU càng nhanh thì truyền thông càng đắt về tương đối.
+- **Ở batch 4096, đường truyền quyết định 4 GPU có lợi hay không.** Với NVLink, k=4 đạt 1,53–1,59 lần
+  (ring và tree) so với 1,21–1,26 lần ở k=2. Qua host, k=4 chỉ nhỉnh hơn k=2 một chút (1,23–1,33 lần so với 1,16–1,27 lần), và truyền
+  thông không được che tăng lên 46–54 %. Ở k=2 hai đường truyền cho tăng tốc gần như nhau, vì
+  allreduce nhỏ so với phần tính toán.
+- **Vẫn còn xa 4 lần.** Kể cả với NVLink, 28–30 % mỗi bước k=4 ở batch 4096 là truyền thông không
+  được che, và việc gom batch trên host (mục 6) không giảm khi tăng k.
+- Độ chính xác không phụ thuộc đường truyền (94,7 % ở 256, 87,9 % ở 4096). Các A100 không báo hạ xung
+  do công suất hay nhiệt độ, chỉ có các khoảng rảnh giữa các lần chạy.
+- Băng thông của tree ở k=4 bị giới hạn bởi thuật toán chứ không phải đường truyền: rd và ring dùng
+  cùng NVLink nhưng đạt gấp 2–3 lần.
+
 ## Hạn chế
 
-- **Chỉ có 2 GPU.** Kaggle cung cấp tối đa 2× T4, nên không kiểm chứng được sự tăng theo k của
-  O(L·k) + O(k·p/B).
+- **Tối đa 4 GPU, trên một máy.** Kaggle cung cấp tối đa 2× T4; kết quả k=4 lấy từ một máy RunPod
+  4× A100 SXM (mục 7), một lần chạy với 3 lần lặp. Chưa thử huấn luyện trên nhiều máy.
 - **Mô hình nhỏ.** Với gradient 1,63 MB và dưới 1 ms tính toán mỗi bước ở batch mặc định, truyền
   thông chiếm ưu thế. Phép quét batch (mục 6) cho thấy tăng tốc khi phần tính toán mỗi bước lớn lên;
   batch lớn hơn làm giảm độ chính xác sau cùng số epoch với learning rate cố định.
@@ -263,5 +329,5 @@ bench/        bench_allreduce.cu: kiểm tra tính đúng + đo độ trễ/băn
 tests/        sim_allreduce.cpp + CUDA runtime giả lập (make simcheck)
 scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, summarize_sweep.py, get_mnist.sh
   kaggle/     check/ (kiểm tra nhanh), profile/ (profile kernel bằng nsys), final/ (lần chạy cuối), sweep/ (quét batch)
-runs/         log và CSV gốc từ Kaggle
+runs/         log và CSV gốc (Kaggle 2× T4, RunPod 4× A100 SXM)
 ```

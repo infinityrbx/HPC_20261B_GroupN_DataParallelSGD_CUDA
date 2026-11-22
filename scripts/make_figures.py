@@ -152,3 +152,60 @@ ax.grid(axis="x", visible=False)
 ax.set_title("Epoch time at batch 256: half of each 2-GPU step is communication")
 ax.legend(loc="upper right")
 save(fig, "fig5_epoch_breakdown.png")
+
+# ---- Fig 6: allreduce bandwidth, NVLink vs through host (4× A100 SXM) -------------------
+A100 = "runs/runpod-a100-2026-11-23"
+fig, axs = plt.subplots(1, 2, figsize=(9, 4.0), sharey=True)
+for ax, k in zip(axs, (2, 4)):
+    for mode, ls, tag in (("p2p", "-", "NVLink"), ("host", "--", "via host (PCIe)")):
+        by = defaultdict(list)
+        for r in rows(f"{A100}/{mode}/allreduce_k.csv"):
+            if int(r["k"]) == k:
+                by[r["method"]].append((int(r["msg_bytes"]), float(r["busbw_GBs"])))
+        for m in ("tree", "ring", "rd"):
+            pts = sorted(by[m])
+            ax.plot([p[0] for p in pts], [p[1] for p in pts], color=COLOR[m], ls=ls, marker=MARK[m],
+                    markersize=4, markeredgecolor=SURFACE, markeredgewidth=0.8,
+                    label=f"{m}, {tag}")
+    ax.set_xscale("log", base=2)
+    ax.set_yscale("log")
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+    ax.axvline(1628200, color=NEUTRAL, lw=1.2, ls=":")
+    ticks = [4096, 65536, 1048576, 16777216, 268435456]
+    ax.set_xticks(ticks, [size_label(t) for t in ticks])
+    ax.set_xlabel("Message size")
+    ax.set_title(f"k = {k}")
+axs[0].set_ylabel("Bus bandwidth (GB/s, log scale)")
+axs[0].text(1628200 * 1.15, 0.02, "gradient\n1.63 MB", color=INK2, fontsize=8)
+axs[1].legend(loc="upper left", fontsize=7.5, ncol=1, handlelength=3.5)
+fig.suptitle("Allreduce bandwidth on 4× A100 SXM: NVLink (solid) vs through host memory (dashed)",
+             x=0.01, ha="left", fontweight="bold", fontsize=11)
+save(fig, "fig6_a100_nvlink_vs_host.png")
+
+# ---- Fig 7: training speedup vs number of GPUs, NVLink vs through host (4× A100 SXM) ----
+def steady(path):
+    d = {}
+    for line in open(os.path.join(ROOT, path)):
+        c = [x.strip() for x in line.strip().strip("|").split("|")]
+        if len(c) == 8 and c[0].isdigit():
+            d[(int(c[0]), c[2])] = float(c[3].split()[0])
+    return d
+fig, axs = plt.subplots(1, 2, figsize=(9, 3.8), sharey=True)
+for ax, B in zip(axs, (256, 4096)):
+    ax.axhline(1.0, color=NEUTRAL, lw=1.2, ls="--")
+    for mode, ls, tag in (("p2p", "-", "NVLink"), ("host", "--", "via host")):
+        d = steady(f"{A100}/{mode}/scaling_summary.md")
+        base = d[(B, "1 GPU")]
+        for m in ("tree", "ring", "rd"):
+            ys = [1.0] + [base / d[(B, f"{m} (k={k})")] for k in (2, 4)]
+            ax.plot([1, 2, 4], ys, color=COLOR[m], ls=ls, marker=MARK[m],
+                    markeredgecolor=SURFACE, markeredgewidth=1.2, label=f"{m}, {tag}")
+    ax.set_xticks([1, 2, 4])
+    ax.set_xlabel("Number of GPUs (k)")
+    ax.set_title(f"Global batch {B}")
+axs[0].set_ylabel("Speedup vs 1 GPU")
+axs[0].set_ylim(0, 1.8)
+axs[1].legend(loc="upper left", fontsize=7.5, ncol=2, handlelength=3.5)
+fig.suptitle("Training speedup on 4× A100 SXM: NVLink (solid) vs through host memory (dashed)",
+             x=0.01, ha="left", fontweight="bold", fontsize=11)
+save(fig, "fig7_a100_speedup_vs_k.png")
