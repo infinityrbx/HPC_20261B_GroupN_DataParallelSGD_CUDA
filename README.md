@@ -26,10 +26,10 @@ Báo cáo đầy đủ (PDF, tiếng Việt): [`docs/report/bao-cao.pdf`](docs/r
 
 | Câu hỏi | Trả lời |
 |---|---|
-| Các thuật toán allreduce trên GPU có đúng không? | Có. tree, ring và rd qua mọi bài kiểm tra; các bản sao tham số giống nhau từng bit; qua 10 epoch, loss chênh lệch không quá 2e-5 so với 1 GPU; độ chính xác 96,14 % (1 GPU và CPU: 96,16 %). |
+| Các thuật toán allreduce trên GPU có đúng không? | Có. tree, ring và rd qua mọi bài kiểm tra; các bản sao tham số giống nhau từng bit; qua 10 epoch, loss chênh lệch tối đa 2,3e-5 so với 1 GPU; độ chính xác 96,14 % (1 GPU và CPU: 96,16 %). |
 | GPU có nhanh hơn CPU khi huấn luyện không? | Có. 1 T4: 0,199 s/epoch; bản C tuần tự trên một nhân CPU: 8,19 s. Nhanh khoảng **41 lần**. |
 | Phép nhân ma trận có phải nút thắt cổ chai không? | Có. Chiếm 99,7 % số FLOP và **94,5–95,5 % thời gian kernel trên GPU** (đo bằng nsys). |
-| Truyền thông tốn bao nhiêu? | Khoảng **một nửa mỗi bước khi dùng 2 GPU** (50–51 % truyền thông không được che) với tree, ring và rd; 75 % nếu đi qua CPU. Một lần allreduce gradient 1,63 MB mất 0,36–0,39 ms trên GPU, 1,19 ms qua CPU. |
+| Truyền thông tốn bao nhiêu? | Khoảng **một nửa mỗi bước khi dùng 2 GPU** (50–51 % truyền thông không được che) với tree, ring và rd; 75 % nếu đi qua CPU. Một lần allreduce gradient 1,63 MB mất khoảng 0,36–0,39 ms trên GPU, 1,19 ms qua CPU (nội suy giữa hai điểm đo 1 MB và 2 MB). |
 | 2 GPU có nhanh hơn 1 GPU không? | Tùy kích thước batch. Với batch mặc định 256 thì không: 0,87–0,89 lần, vì truyền thông tốn gần bằng phần tính toán tiết kiệm được khi chia batch. Từ batch 1024 trở lên thì có: 1,33 lần ở 1024, 1,53 lần ở 2048 và tới **1,60 lần** ở 4096 (mục 6). |
 | Thuật toán allreduce nào nhanh nhất? | Trong benchmark: host_ref ở 4–8 KB, recursive doubling từ 16 KB đến 2 MB, ring từ 4 MB trở lên. Khi huấn luyện, tree, ring và rd chênh nhau dưới 2 % và khoảng giá trị qua các lần lặp chồng lên nhau, nên không có thuật toán nào thắng. |
 | NVLink có giải quyết được không, và 4 GPU thì sao? | Một phần (mục 7, 4× A100 SXM). Với thông điệp lớn, NVLink nhanh hơn đi qua host 12–27 lần (ring: 157 GB/s so với 5,8 GB/s ở k=4). Ở batch 4096, 4 GPU đạt tới **1,59 lần** với NVLink nhưng chỉ 1,23–1,33 lần khi qua host. Ở batch 256, thêm GPU vẫn chậm hơn kể cả với NVLink, vì gradient nhỏ khiến mỗi lần allreduce bị chi phối bởi độ trễ. |
@@ -73,7 +73,7 @@ Các phương pháp (mỗi phương pháp một file trong `src/allreduce/`):
 | `make simcheck` (CUDA giả lập, thứ tự stream ngẫu nhiên, k = 2..8; 5.670 lần chạy) | không áp dụng | đạt | đạt | đạt |
 | `bench_allreduce --check-only`, mọi kích thước kể cả n lẻ | đạt | đạt | đạt | đạt |
 | Sai khác tham số lớn nhất giữa các bản sao | 0 (từng bit) | 0 (từng bit) | 0 (từng bit) | 0 (từng bit) |
-| Loss so với 1 GPU qua 10 epoch, sai khác tuyệt đối lớn nhất | 2e-5 | 2e-5 | 2e-5 | 2e-5 |
+| Loss so với 1 GPU qua 10 epoch, sai khác tuyệt đối lớn nhất | 2,3e-5 | 2,3e-5 | 2,3e-5 | 2,3e-5 |
 | Độ chính xác trên tập test, 10 epoch | 96,14 % | 96,14 % | 96,14 % | 96,14 % |
 
 1 GPU và bản C tuần tự đều đạt 96,16 % (sai khác loss lớn nhất 1e-5). Chênh lệch 0,02 điểm trên
@@ -137,15 +137,16 @@ ngoặc; "ổn định" = trung vị các epoch 2–10 (epoch 1 có thời gian 
 Nhận xét:
 
 - Khoảng một nửa mỗi bước 2 GPU là truyền thông. Trong benchmark (mục 5), một lần allreduce
-  gradient 1,63 MB mất 0,36–0,39 ms trên GPU, nên truyền thông tốn gần bằng phần tính toán tiết
+  gradient 1,63 MB mất khoảng 0,36–0,39 ms trên GPU (nội suy giữa 1 MB và 2 MB), nên truyền thông tốn gần bằng phần tính toán tiết
   kiệm được khi chia batch, và 2 GPU chậm hơn 1 GPU khoảng 12 %.
 - Thực hiện phép gom trên GPU thay vì CPU giảm một nửa thời gian mỗi epoch (0,420 s xuống
   0,225 s) và giảm truyền thông không được che từ 75 % xuống khoảng 50 %. Allreduce 1,63 MB qua
   CPU mất 1,19 ms, gấp ba lần các phương pháp trên GPU.
 - Khi huấn luyện, tree, ring và rd chênh nhau dưới 2 % và khoảng giá trị qua 3 lần lặp chồng lên
   nhau, nên số đo không xếp hạng được chúng ở kích thước thông điệp này.
-- `--overlap` không tạo khác biệt đo được (trong khoảng ±1 %); MLP hai lớp còn quá ít việc lan
-  truyền ngược để che truyền thông.
+- Với tree, ring và rd, `--overlap` không tạo khác biệt đo được (trong khoảng ±1 %); MLP hai lớp còn
+  quá ít việc lan truyền ngược để che truyền thông. Với host_ref, `--overlap` chậm hơn khoảng 3 %
+  (0,433 so với 0,420 s, khoảng giá trị không chồng nhau).
 - Các lần lặp rất ổn định: 3 lần chạy của mỗi cấu hình chênh nhau tối đa 2 %.
 
 ## 5. Allreduce thuần: thuật toán nào thắng ở kích thước nào
@@ -170,8 +171,8 @@ chiều đạt 9,9 GB/s (`runs/kaggle-2026-11-22/`).
 
 - **Thông điệp nhỏ bị giới hạn bởi độ trễ.** Với 4–8 KB, hai lần chép nhỏ qua CPU nhanh hơn một chút
   so với mọi phương pháp trên GPU. Ring có mức sàn khoảng 0,053 ms vì phải chạy nhiều bước phụ thuộc
-  nhau; tree và rd bắt đầu từ khoảng 0,029–0,034 ms.
-- **Thông điệp vừa (16 KB–2 MB) thì recursive doubling nhanh nhất**, hơn tới 30 % ở 64 KB và 5–10 %
+  nhau; tree và rd bắt đầu từ khoảng 0,029–0,032 ms.
+- **Thông điệp vừa (16 KB–2 MB) thì recursive doubling nhanh nhất**, hơn tới 34 % ở 128 KB (28 % ở 64 KB) và 5–10 %
   ở 1–2 MB. Gradient 1,63 MB của mô hình nằm trong khoảng này.
 - **Thông điệp lớn bị giới hạn bởi băng thông và ring nhanh nhất**, nhưng chỉ hơn 4–5 %. Đường qua
   CPU chậm hơn các phương pháp GPU 3,3 lần ở đây (1,4 so với 4,5–4,7 GB/s).
@@ -201,9 +202,9 @@ truyền thông càng nhỏ. Quét trên 2× T4, 5 epoch, lặp 3 lần, thời 
 
 - **Điểm hòa vốn nằm giữa 256 và 1024.** Dưới đó, truyền thông lớn hơn phần tính toán tiết kiệm được;
   trên đó, 2 GPU thắng và tăng tốc bão hòa ở khoảng 1,6 lần.
-- **Vì sao không đạt 2 lần.** Truyền thông trở nên nhỏ (5–7 % với ring và rd), nhưng mỗi bước vẫn
-  phải gom cả batch toàn cục trên host và chép lên GPU, và phần đó không giảm khi thêm GPU (định luật
-  Amdahl).
+- **Vì sao không đạt 2 lần.** Truyền thông trở nên nhỏ (5–7 % với ring và rd). Giả thuyết là phần
+  gom cả batch toàn cục trên host và chép lên GPU không giảm khi thêm GPU (định luật Amdahl); phần
+  này chưa được đo riêng.
 - **Ring và rd nhanh hơn tree khi tính toán chiếm ưu thế.** Ở batch 256 cả ba ngang nhau. Từ 1024 trở
   lên, tree có thời gian truyền thông không được che gấp 3–4 lần (21–36 % so với 5–23 %) và chậm hơn
   2–4 %. Tree dồn công việc lên GPU 0 (nhận, cộng, chia, gửi lại), còn ring và rd chia đều cho cả hai
@@ -268,7 +269,7 @@ Kết quả cho thấy:
   (truyền thông không được che 29–37 % ở k=2 và 50–69 % ở k=4 qua NVLink, 83–89 % ở k=4 qua host).
   GPU càng nhanh thì truyền thông càng đắt về tương đối.
 - **Ở batch 4096, đường truyền quyết định 4 GPU có lợi hay không.** Với NVLink, k=4 đạt 1,53–1,59 lần
-  (ring và tree) so với 1,21–1,26 lần ở k=2. Qua host, k=4 chỉ nhỉnh hơn k=2 một chút (1,23–1,33 lần so với 1,16–1,27 lần), và truyền
+  (ring và tree; rd chỉ 1,35 lần) so với 1,21–1,26 lần ở k=2. Qua host, k=4 chỉ nhỉnh hơn k=2 một chút (1,23–1,33 lần so với 1,16–1,27 lần), và truyền
   thông không được che tăng lên 46–54 %. Ở k=2 hai đường truyền cho tăng tốc gần như nhau, vì
   allreduce nhỏ so với phần tính toán.
 - **Vẫn còn xa 4 lần.** Kể cả với NVLink, 28–30 % mỗi bước k=4 ở batch 4096 là truyền thông không

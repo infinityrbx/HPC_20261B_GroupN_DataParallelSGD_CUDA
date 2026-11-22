@@ -4,7 +4,7 @@ Commit fbfbf96. H = 512, lr 0.1, 5 epochs, 3 repeats per point; P2P access on (m
 Rows in `sweep.csv` are in run order: for each batch size 256, 1024, 2048, 4096, 8192, three
 rounds of (gpu1, tree, ring, rd). Every 2-GPU run ended with bitwise-identical replicas.
 Produced by `scripts/summarize_sweep.py results/sweep.log`; steady epoch = median of epochs 2..5,
-median over repeats (min–max in brackets). Raw `sweep.log` and `clocks.csv` are kept outside the repo.
+median over repeats (min–max in brackets). Raw `sweep.log` and `clocks.csv` are in `raw/`.
 
 | Global batch | Steps/epoch | Config | Steady epoch (s) | Time per step (ms) | Speedup vs 1 GPU | Exposed comm (%) | Test acc (%) |
 |---|---|---|---|---|---|---|---|

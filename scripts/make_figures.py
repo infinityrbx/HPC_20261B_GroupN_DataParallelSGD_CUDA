@@ -43,19 +43,20 @@ def save(fig, name):
     print("wrote", os.path.join("docs/figures", name))
 
 # ---- Fig 1: speedup vs batch size (sweep) ----------------------------------------------
-# Steady-state epoch times (median of epochs 2..5, median of 3 repeats) from summary.md;
-# sweep.csv only has the mean over all epochs, which includes the warm-up epoch.
+# Speedups from summary.md (steady-state epoch, median of epochs 2..5 and of 3 repeats, computed
+# from unrounded times), so the plotted points equal the report's table; sweep.csv only has the mean
+# over all epochs, which includes the warm-up epoch.
 batches = [256, 1024, 2048, 4096, 8192]
-ep = {}
+spd = {}
 for line in open(os.path.join(ROOT, "runs/kaggle-sweep-2026-11-23/summary.md")):
     c = [x.strip() for x in line.strip().strip("|").split("|")]
     if len(c) == 8 and c[0].isdigit():
-        ep[(int(c[0]), {"1 GPU": "gpu1"}.get(c[2], c[2]))] = float(c[3].split()[0])
+        spd[(int(c[0]), c[2])] = float(c[5].rstrip("×"))
 fig, ax = plt.subplots(figsize=(7, 4.2))
 ax.axhline(1.0, color=NEUTRAL, lw=1.2, ls="--")
 ax.text(256, 1.02, "1 GPU (break-even)", color=INK2, va="bottom", fontsize=9)
 for m in ("tree", "ring", "rd"):
-    ys = [ep[(b, "gpu1")] / ep[(b, m)] for b in batches]
+    ys = [spd[(b, m)] for b in batches]
     ax.plot(batches, ys, color=COLOR[m], marker=MARK[m], label=LABEL[m],
             markeredgecolor=SURFACE, markeredgewidth=1.5)
     ax.text(batches[-1] * 1.05, ys[-1] + {"tree": -0.045, "ring": -0.005, "rd": 0.035}[m], LABEL[m],
@@ -129,15 +130,16 @@ ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.32), ncol=2)
 save(fig, "fig4_matmul_share.png")
 
 # ---- Fig 5: epoch time split into exposed communication and the rest (final run, batch 256) ----
-tr = rows("runs/kaggle-final-2026-11-22/training.csv")
-agg = defaultdict(list)
-for r in tr:
-    if r["method"] in ("gpu1", "host_ref", "tree", "ring", "rd"):
-        agg[r["method"]].append((float(r["epoch_s"]), float(r["comm_pct"])))
-cfgs = ["gpu1", "host_ref", "tree", "ring", "rd"]
+# Steady-state epoch (epochs 2..10) and exposed comm, medians of 3 repeats, from summary.md, so the
+# bars match the report's table (training.csv only has the mean over all epochs).
+fin = {}
+for line in open(os.path.join(ROOT, "runs/kaggle-final-2026-11-22/summary.md")):
+    c = [x.strip() for x in line.strip().strip("|").split("|")]
+    if len(c) == 9 and c[1].isdigit() and c[0] != "seq (CPU)":
+        fin[c[0]] = (float(c[3].split()[0]), float(c[5].split()[0]))
 names = ["1 GPU", "host_ref", "tree", "ring", "rd"]
-tot = [st.median([e for e, _ in agg[c]]) * 1000 for c in cfgs]
-com = [t * st.median([p for _, p in agg[c]]) / 100 for t, c in zip(tot, cfgs)]
+tot = [fin[n][0] * 1000 for n in names]
+com = [t * fin[n][1] / 100 for t, n in zip(tot, names)]
 rest = [t - c for t, c in zip(tot, com)]
 fig, ax = plt.subplots(figsize=(7, 3.6))
 ax.bar(names, rest, color=NEUTRAL, width=0.55, label="compute and other", edgecolor=SURFACE, linewidth=2)
@@ -147,7 +149,7 @@ for n, t, c in zip(names, tot, com):
     ax.text(n, t + 6, f"{t:.0f} ms" + (f"\n{100 * c / t:.0f} % comm" if c / t > 0.05 else ""),
             ha="center", va="bottom", fontsize=8.5, color=INK)
 ax.set_ylim(0, max(tot) * 1.3)
-ax.set_ylabel("Mean epoch time (ms)")
+ax.set_ylabel("Steady-state epoch time (ms)")
 ax.grid(axis="x", visible=False)
 ax.set_title("Epoch time at batch 256: half of each 2-GPU step is communication")
 ax.legend(loc="upper right")
@@ -183,21 +185,21 @@ fig.suptitle("Allreduce bandwidth on 4× A100 SXM: NVLink (solid) vs through hos
 save(fig, "fig6_a100_nvlink_vs_host.png")
 
 # ---- Fig 7: training speedup vs number of GPUs, NVLink vs through host (4× A100 SXM) ----
-def steady(path):
+def speedups(path):
+    # speedup column of scaling_summary.md (from unrounded steady-state times), as in the report
     d = {}
     for line in open(os.path.join(ROOT, path)):
         c = [x.strip() for x in line.strip().strip("|").split("|")]
         if len(c) == 8 and c[0].isdigit():
-            d[(int(c[0]), c[2])] = float(c[3].split()[0])
+            d[(int(c[0]), c[2])] = float(c[5].rstrip("×"))
     return d
 fig, axs = plt.subplots(1, 2, figsize=(9, 3.8), sharey=True)
 for ax, B in zip(axs, (256, 4096)):
     ax.axhline(1.0, color=NEUTRAL, lw=1.2, ls="--")
     for mode, ls, tag in (("p2p", "-", "NVLink"), ("host", "--", "via host")):
-        d = steady(f"{A100}/{mode}/scaling_summary.md")
-        base = d[(B, "1 GPU")]
+        d = speedups(f"{A100}/{mode}/scaling_summary.md")
         for m in ("tree", "ring", "rd"):
-            ys = [1.0] + [base / d[(B, f"{m} (k={k})")] for k in (2, 4)]
+            ys = [1.0] + [d[(B, f"{m} (k={k})")] for k in (2, 4)]
             ax.plot([1, 2, 4], ys, color=COLOR[m], ls=ls, marker=MARK[m],
                     markeredgecolor=SURFACE, markeredgewidth=1.2, label=f"{m}, {tag}")
     ax.set_xticks([1, 2, 4])

@@ -1,0 +1,7 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+94.5,208511165,1250,166808.9,22960.0,7488,564401,194026.5,"k_matmul_tiled(const float *, const float *, float *, int, int, int, int, int)"
+1.8,3915992,468,8367.5,7200.0,5408,12287,2441.8,"k_colsum(const float *, float *, int, int)"
+1.6,3547754,234,15161.3,14240.0,13888,16607,1179.8,"k_sgd(float *, const float *, float, unsigned long)"
+0.9,1883700,548,3437.4,2496.0,1408,6815,1844.1,"k_bias_relu(float *, const float *, float *, int, int)"
+0.8,1874508,274,6841.3,5504.0,4640,9440,1826.6,"k_softmax_xent(const float *, const float *, float *, float, float *, int *, int, int)"
+0.4,962507,234,4113.3,3167.5,3040,5344,1051.9,"k_relu_backward(float *, const float *, unsigned long)"

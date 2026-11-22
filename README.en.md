@@ -26,10 +26,10 @@ Full report (PDF, Vietnamese): [`docs/report/bao-cao.pdf`](docs/report/bao-cao.p
 
 | Question | Answer |
 |---|---|
-| Are the GPU allreduce methods correct? | Yes. tree, ring and rd pass every check; replicas stay bitwise identical; over 10 epochs the loss stays within 2e-5 of 1-GPU training; test accuracy 96.14 % (1 GPU and CPU: 96.16 %). |
+| Are the GPU allreduce methods correct? | Yes. tree, ring and rd pass every check; replicas stay bitwise identical; over 10 epochs the loss stays within 2.3e-5 of 1-GPU training; test accuracy 96.14 % (1 GPU and CPU: 96.16 %). |
 | Is a GPU faster than a CPU for training? | Yes. 1 T4: 0.199 s per epoch; sequential C on one CPU core: 8.19 s. About **41×**. |
 | Is matrix multiplication the bottleneck? | Yes. 99.7 % of the FLOPs and **94.5–95.5 % of GPU kernel time** (nsys). |
-| How much does communication cost? | About **half of every 2-GPU step** (50–51 % exposed communication) with tree, ring and rd; 75 % through the CPU. One allreduce of the 1.63 MB gradient takes 0.36–0.39 ms on the GPUs, 1.19 ms through the CPU. |
+| How much does communication cost? | About **half of every 2-GPU step** (50–51 % exposed communication) with tree, ring and rd; 75 % through the CPU. One allreduce of the 1.63 MB gradient takes about 0.36–0.39 ms on the GPUs, 1.19 ms through the CPU (interpolated between the 1 MB and 2 MB points). |
 | Do 2 GPUs beat 1? | It depends on the batch size. At the default batch of 256, no: 0.87–0.89×, because communication costs about as much as the compute saved by splitting the batch. From a batch of 1024 up, yes: 1.33× at 1024, 1.53× at 2048 and up to **1.60×** at 4096 (section 6). |
 | Which allreduce wins? | In the raw benchmark: host_ref at 4–8 KB, recursive doubling from 16 KB to 2 MB, ring from 4 MB up. In training, tree, ring and rd are within 2 % of each other and their repeat ranges overlap, so none wins. |
 | Does NVLink fix it, and what about 4 GPUs? | Partly (section 7, 4× A100 SXM). NVLink moves large messages 12–27× faster than going through the host (ring: 157 GB/s against 5.8 GB/s at k=4). At batch 4096, 4 GPUs give up to **1.59×** with NVLink but only 1.23–1.33× through the host. At batch 256 more GPUs are slower even with NVLink, because the small gradient makes each allreduce latency-bound. |
@@ -73,7 +73,7 @@ Methods (one file each in `src/allreduce/`):
 | `make simcheck` (mocked CUDA, random stream orders, k = 2..8; 5,670 runs) | n/a | pass | pass | pass |
 | `bench_allreduce --check-only`, all sizes incl. odd n | pass | pass | pass | pass |
 | Max parameter difference between replicas | 0 (bitwise) | 0 (bitwise) | 0 (bitwise) | 0 (bitwise) |
-| Loss vs 1 GPU over 10 epochs, max abs diff | 2e-5 | 2e-5 | 2e-5 | 2e-5 |
+| Loss vs 1 GPU over 10 epochs, max abs diff | 2.3e-5 | 2.3e-5 | 2.3e-5 | 2.3e-5 |
 | Test accuracy, 10 epochs | 96.14 % | 96.14 % | 96.14 % | 96.14 % |
 
 1 GPU and the sequential C version both reach 96.16 % (max loss diff 1e-5). The 0.02-point gap
@@ -138,15 +138,16 @@ median of epochs 2–10 (epoch 1 includes warm-up):
 What this shows:
 
 - About half of every 2-GPU step is communication. In the benchmark (section 5), one allreduce
-  of the model's 1.63 MB gradient takes 0.36–0.39 ms on the GPUs, so communication costs about as
+  of the model's 1.63 MB gradient takes about 0.36–0.39 ms on the GPUs (interpolated between 1 MB and 2 MB), so communication costs about as
   much as the compute saved by splitting the batch, and 2 GPUs end up about 12 % slower than 1.
 - Doing the reduction on the GPUs instead of the CPU halves the epoch time (0.420 s → 0.225 s)
   and lowers exposed communication from 75 % to about 50 %. A CPU allreduce of 1.63 MB takes
   1.19 ms, three times the GPU methods.
 - tree, ring and rd are within 2 % of each other in training, and their ranges over 3 repeats
   overlap, so the measurements cannot rank them at this message size.
-- `--overlap` makes no measurable difference (within ±1 %); a two-layer MLP has little backward
-  work left to hide communication behind.
+- For tree, ring and rd, `--overlap` makes no measurable difference (within ±1 %); a two-layer MLP
+  has little backward work left to hide communication behind. For host_ref, `--overlap` is about 3 %
+  slower (0.433 against 0.420 s, ranges do not overlap).
 - Repeats are tight: the 3 runs of each configuration differ by at most 2 %.
 
 ## 5. Raw allreduce: which method wins at which size
@@ -171,8 +172,8 @@ reaches 9.9 GB/s (`runs/kaggle-2026-11-22/`).
 
 - **Small messages are latency-bound.** For 4–8 KB, two small copies through the CPU are slightly
   faster than any GPU method. Ring has a floor of about 0.053 ms because it runs more dependent
-  steps; tree and rd start at about 0.029–0.034 ms.
-- **Medium messages (16 KB–2 MB) favour recursive doubling**, by up to 30 % at 64 KB and 5–10 % at
+  steps; tree and rd start at about 0.029–0.032 ms.
+- **Medium messages (16 KB–2 MB) favour recursive doubling**, by up to 34 % at 128 KB (28 % at 64 KB) and 5–10 % at
   1–2 MB. The model's 1.63 MB gradient is in this range.
 - **Large messages are bandwidth-bound and favour ring**, but only by 4–5 %. The CPU path is
   3.3× slower than the GPU methods here (1.4 vs 4.5–4.7 GB/s).
@@ -201,9 +202,9 @@ spent communicating. Sweep on 2× T4, 5 epochs, 3 repeats, steady-state epoch ti
 
 - **Crossover between 256 and 1024.** Below that, communication outweighs the saved compute; above
   it, 2 GPUs win, and the speedup levels off at about 1.6×.
-- **Why not 2×.** Communication becomes small (5–7 % with ring and rd), but each step also gathers
-  the whole global batch on the host and copies it to the GPUs, and that part does not shrink
-  with more GPUs (Amdahl's law).
+- **Why not 2×.** Communication becomes small (5–7 % with ring and rd). The likely cause is that each
+  step gathers the whole global batch on the host and copies it to the GPUs, which does not shrink
+  with more GPUs (Amdahl's law); this part has not been timed separately.
 - **Ring and rd beat tree once compute dominates.** At batch 256 the three tie. From 1024 up, tree
   exposes 3–4× more communication (21–36 % against 5–23 %) and is 2–4 % slower. Tree serialises the
   work on GPU 0 (receive, add, scale, send back), while ring and rd split it between both GPUs. The
@@ -268,7 +269,7 @@ What this shows:
   (exposed communication 29–37 % at k=2 and 50–69 % at k=4 over NVLink, 83–89 % at k=4 via host).
   A faster GPU makes communication relatively more expensive.
 - **At batch 4096 the link decides whether 4 GPUs help.** With NVLink, k=4 reaches 1.53–1.59×
-  (ring and tree) against 1.21–1.26× at k=2. Via host, k=4 is barely better than k=2 (1.23–1.33× against 1.16–1.27×), and
+  (ring and tree; rd only 1.35×) against 1.21–1.26× at k=2. Via host, k=4 is barely better than k=2 (1.23–1.33× against 1.16–1.27×), and
   exposed communication rises to 46–54 %. At k=2 the two links give about the same speedup, because
   the allreduce is small next to the compute.
 - **Still far from 4×.** Even with NVLink, 28–30 % of a k=4 step at batch 4096 is exposed

@@ -4,7 +4,9 @@ Commit 3fd2b8a, fixed settings (10 epochs, seed 42, global batch 256, lr 0.1, H 
 configuration. `make simcheck`: 5670 runs, 0 failures. `bench_allreduce --check-only`: all sizes
 passed for host_ref, tree, ring and rd. Replicas bitwise identical in every 2-GPU run.
 Produced by `scripts/summarize_runs.py results/final.log results/clocks.csv`; median over repeats,
-min–max in brackets. Raw `final.log`, `clocks.csv` and the 31 loss logs are kept outside the repo.
+min–max in brackets. Raw `final.log`, `clocks.csv` and the 28 per-run loss logs (`loss_*.csv`, 8 decimals) are in `raw/`.
+"Max loss diff" below uses the 5-decimal losses printed in `final.log`; from the 8-decimal loss logs
+the largest difference of any 2-GPU run to the 1-GPU run is 2.3e-05 (CPU vs 1 GPU: 9.5e-06).
 
 | Config | Runs | Mean epoch (s) | Steady epoch, 2..E (s) | Speedup vs 1 GPU (steady) | Exposed comm (%) | Test acc | Max loss diff vs 1 GPU | Replicas |
 |---|---|---|---|---|---|---|---|---|

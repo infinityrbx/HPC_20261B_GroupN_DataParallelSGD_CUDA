@@ -1,0 +1,806 @@
+
+$ git log -1 --format='commit %H %s'
+commit 3fd2b8a518dfd4c80a065c80cfa624d215b14622 Add Kaggle final run (10 epochs, 3 repeats, clock log) and run summarizer
+[exit 0]
+
+$ nvidia-smi; nvidia-smi topo -m; nvcc --version
+Sun Nov 22 19:33:09 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.178.04             Driver Version: 580.178.04     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |
+| N/A   57C    P8             10W /   70W |       0MiB /  15360MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  Tesla T4                       Off |   00000000:00:05.0 Off |                    0 |
+| N/A   58C    P8             10W /   70W |       0MiB /  15360MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+	[4mGPU0	GPU1	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	PHB	0-3	0		N/A
+GPU1	PHB	 X 	0-3	0		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Aug_20_01:58:59_PM_PDT_2025
+Cuda compilation tools, release 13.0, V13.0.88
+Build cuda_13.0.r13.0/compiler.36424714_0
+[exit 0]
+
+$ make data && make ARCH=sm_75 && make simcheck
+bash scripts/get_mnist.sh data
+downloading train-images-idx3-ubyte
+downloading train-labels-idx1-ubyte
+downloading t10k-images-idx3-ubyte
+downloading t10k-labels-idx1-ubyte
+total 53680
+drwxr-xr-x  2 root root     4096 Nov 22 19:33 .
+drwxr-xr-x 10 root root     4096 Nov 22 19:33 ..
+-rw-r--r--  1 root root  7840016 Nov 22 19:33 t10k-images-idx3-ubyte
+-rw-r--r--  1 root root    10008 Nov 22 19:33 t10k-labels-idx1-ubyte
+-rw-r--r--  1 root root 47040016 Nov 22 19:33 train-images-idx3-ubyte
+-rw-r--r--  1 root root    60008 Nov 22 19:33 train-labels-idx1-ubyte
+mkdir -p bin
+cc -O2 -Wall -Wextra -std=gnu11 -o bin/mlp_seq src/seq/mlp_seq.c src/common/mnist.c src/common/params.c -lm
+cc -O2 -Wall -Wextra -std=gnu11 -c -o bin/mnist.o src/common/mnist.c
+cc -O2 -Wall -Wextra -std=gnu11 -c -o bin/params.o src/common/params.c
+nvcc -O2 -arch=sm_75 -std=c++14 -Xcompiler -Wall -o bin/train_dp src/cuda/train_dp.cu src/cuda/kernels.cu src/allreduce/common.cu src/allreduce/registry.cu src/allreduce/host_ref.cu src/allreduce/tree.cu src/allreduce/ring.cu src/allreduce/rd.cu bin/mnist.o bin/params.o
+nvcc -O2 -arch=sm_75 -std=c++14 -Xcompiler -Wall -o bin/bench_allreduce bench/bench_allreduce.cu src/allreduce/common.cu src/allreduce/registry.cu src/allreduce/host_ref.cu src/allreduce/tree.cu src/allreduce/ring.cu src/allreduce/rd.cu
+g++ -O1 -std=c++17 -w -Itests/mock -Isrc/allreduce -x c++ tests/sim_allreduce.cpp \
+    src/allreduce/tree.cu src/allreduce/ring.cu src/allreduce/rd.cu -o bin/sim_allreduce
+./bin/sim_allreduce
+5670 runs, 0 failures
+[exit 0]
+
+$ ./bin/mlp_seq --csv results/training.csv --loss-log results/loss_seq.csv
+epoch 1  loss 0.55714  time 8.05 s
+epoch 2  loss 0.30289  time 8.14 s
+epoch 3  loss 0.25552  time 8.06 s
+epoch 4  loss 0.22493  time 8.29 s
+epoch 5  loss 0.20050  time 8.26 s
+epoch 6  loss 0.18170  time 8.12 s
+epoch 7  loss 0.16577  time 8.21 s
+epoch 8  loss 0.15283  time 8.19 s
+epoch 9  loss 0.14115  time 8.21 s
+epoch 10  loss 0.13164  time 8.17 s
+test accuracy 0.9616
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --csv results/training.csv --loss-log results/loss_gpu1_r1.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.302 s
+epoch 2  loss 0.30288  time 0.199 s
+epoch 3  loss 0.25552  time 0.199 s
+epoch 4  loss 0.22493  time 0.199 s
+epoch 5  loss 0.20050  time 0.199 s
+epoch 6  loss 0.18170  time 0.199 s
+epoch 7  loss 0.16577  time 0.200 s
+epoch 8  loss 0.15282  time 0.200 s
+epoch 9  loss 0.14114  time 0.200 s
+epoch 10  loss 0.13163  time 0.199 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9616   exposed comm 0.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --csv results/training.csv --loss-log results/loss_gpu1_r2.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.202 s
+epoch 2  loss 0.30288  time 0.199 s
+epoch 3  loss 0.25552  time 0.203 s
+epoch 4  loss 0.22493  time 0.198 s
+epoch 5  loss 0.20050  time 0.199 s
+epoch 6  loss 0.18170  time 0.204 s
+epoch 7  loss 0.16577  time 0.200 s
+epoch 8  loss 0.15282  time 0.200 s
+epoch 9  loss 0.14114  time 0.199 s
+epoch 10  loss 0.13163  time 0.199 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9616   exposed comm 0.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --csv results/training.csv --loss-log results/loss_gpu1_r3.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.199 s
+epoch 2  loss 0.30288  time 0.199 s
+epoch 3  loss 0.25552  time 0.199 s
+epoch 4  loss 0.22493  time 0.199 s
+epoch 5  loss 0.20050  time 0.199 s
+epoch 6  loss 0.18170  time 0.202 s
+epoch 7  loss 0.16577  time 0.205 s
+epoch 8  loss 0.15282  time 0.200 s
+epoch 9  loss 0.14114  time 0.200 s
+epoch 10  loss 0.13163  time 0.200 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9616   exposed comm 0.5% of step time
+[exit 0]
+
+$ ./bin/bench_allreduce --method host_ref --gpus 2 --check-only --max 67108864
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method host_ref --csv results/training.csv --loss-log results/loss_host_ref_r1.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=host_ref k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.476 s
+epoch 2  loss 0.30289  time 0.426 s
+epoch 3  loss 0.25552  time 0.424 s
+epoch 4  loss 0.22493  time 0.416 s
+epoch 5  loss 0.20050  time 0.417 s
+epoch 6  loss 0.18171  time 0.418 s
+epoch 7  loss 0.16578  time 0.419 s
+epoch 8  loss 0.15284  time 0.434 s
+epoch 9  loss 0.14116  time 0.434 s
+epoch 10  loss 0.13165  time 0.420 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 73.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method host_ref --overlap --csv results/training.csv --loss-log results/loss_host_ref_overlap_r1.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=host_ref k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.442 s
+epoch 2  loss 0.30289  time 0.432 s
+epoch 3  loss 0.25552  time 0.433 s
+epoch 4  loss 0.22493  time 0.443 s
+epoch 5  loss 0.20050  time 0.444 s
+epoch 6  loss 0.18171  time 0.437 s
+epoch 7  loss 0.16578  time 0.438 s
+epoch 8  loss 0.15284  time 0.436 s
+epoch 9  loss 0.14116  time 0.436 s
+epoch 10  loss 0.13165  time 0.434 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 71.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method host_ref --csv results/training.csv --loss-log results/loss_host_ref_r2.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=host_ref k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.424 s
+epoch 2  loss 0.30289  time 0.423 s
+epoch 3  loss 0.25552  time 0.422 s
+epoch 4  loss 0.22493  time 0.416 s
+epoch 5  loss 0.20050  time 0.417 s
+epoch 6  loss 0.18171  time 0.419 s
+epoch 7  loss 0.16578  time 0.420 s
+epoch 8  loss 0.15284  time 0.429 s
+epoch 9  loss 0.14116  time 0.437 s
+epoch 10  loss 0.13165  time 0.420 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 75.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method host_ref --overlap --csv results/training.csv --loss-log results/loss_host_ref_overlap_r2.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=host_ref k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.451 s
+epoch 2  loss 0.30289  time 0.458 s
+epoch 3  loss 0.25552  time 0.432 s
+epoch 4  loss 0.22493  time 0.433 s
+epoch 5  loss 0.20050  time 0.434 s
+epoch 6  loss 0.18171  time 0.435 s
+epoch 7  loss 0.16578  time 0.431 s
+epoch 8  loss 0.15284  time 0.441 s
+epoch 9  loss 0.14116  time 0.433 s
+epoch 10  loss 0.13165  time 0.433 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 71.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method host_ref --csv results/training.csv --loss-log results/loss_host_ref_r3.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=host_ref k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.421 s
+epoch 2  loss 0.30289  time 0.420 s
+epoch 3  loss 0.25552  time 0.421 s
+epoch 4  loss 0.22493  time 0.420 s
+epoch 5  loss 0.20050  time 0.417 s
+epoch 6  loss 0.18171  time 0.417 s
+epoch 7  loss 0.16578  time 0.425 s
+epoch 8  loss 0.15284  time 0.436 s
+epoch 9  loss 0.14116  time 0.419 s
+epoch 10  loss 0.13165  time 0.414 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 74.9% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method host_ref --overlap --csv results/training.csv --loss-log results/loss_host_ref_overlap_r3.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=host_ref k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.436 s
+epoch 2  loss 0.30289  time 0.435 s
+epoch 3  loss 0.25552  time 0.452 s
+epoch 4  loss 0.22493  time 0.429 s
+epoch 5  loss 0.20050  time 0.430 s
+epoch 6  loss 0.18171  time 0.428 s
+epoch 7  loss 0.16578  time 0.430 s
+epoch 8  loss 0.15284  time 0.431 s
+epoch 9  loss 0.14116  time 0.433 s
+epoch 10  loss 0.13165  time 0.431 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 71.6% of step time
+[exit 0]
+
+$ ./bin/bench_allreduce --method host_ref --gpus 2 --max 67108864 --csv results/allreduce.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.0248        0.165       ok
+        8192       0.0288        0.284       ok
+       16384       0.0393        0.417       ok
+       32768       0.0409        0.802       ok
+       65536       0.0637        1.029       ok
+      131072       0.1121        1.170       ok
+      262144       0.2121        1.236       ok
+      524288       0.4094        1.281       ok
+     1048576       0.7785        1.347       ok
+     2097152       1.5182        1.381       ok
+     4194304       3.0047        1.396       ok
+     8388608       5.9834        1.402       ok
+    16777216      11.9698        1.402       ok
+    33554432      23.9113        1.403       ok
+    67108864      47.9801        1.399       ok
+CORRECTNESS: all sizes passed
+[exit 0]
+
+$ ./bin/bench_allreduce --method tree --gpus 2 --check-only --max 67108864
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --csv results/training.csv --loss-log results/loss_tree_r1.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.263 s
+epoch 2  loss 0.30289  time 0.226 s
+epoch 3  loss 0.25552  time 0.225 s
+epoch 4  loss 0.22493  time 0.225 s
+epoch 5  loss 0.20050  time 0.225 s
+epoch 6  loss 0.18171  time 0.225 s
+epoch 7  loss 0.16578  time 0.225 s
+epoch 8  loss 0.15284  time 0.225 s
+epoch 9  loss 0.14116  time 0.225 s
+epoch 10  loss 0.13165  time 0.225 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 51.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --overlap --csv results/training.csv --loss-log results/loss_tree_overlap_r1.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.230 s
+epoch 2  loss 0.30289  time 0.226 s
+epoch 3  loss 0.25552  time 0.227 s
+epoch 4  loss 0.22493  time 0.225 s
+epoch 5  loss 0.20050  time 0.226 s
+epoch 6  loss 0.18171  time 0.226 s
+epoch 7  loss 0.16578  time 0.228 s
+epoch 8  loss 0.15284  time 0.228 s
+epoch 9  loss 0.14116  time 0.226 s
+epoch 10  loss 0.13165  time 0.226 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --csv results/training.csv --loss-log results/loss_tree_r2.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.233 s
+epoch 2  loss 0.30289  time 0.229 s
+epoch 3  loss 0.25552  time 0.227 s
+epoch 4  loss 0.22493  time 0.227 s
+epoch 5  loss 0.20050  time 0.227 s
+epoch 6  loss 0.18171  time 0.227 s
+epoch 7  loss 0.16578  time 0.227 s
+epoch 8  loss 0.15284  time 0.226 s
+epoch 9  loss 0.14116  time 0.227 s
+epoch 10  loss 0.13165  time 0.230 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.9% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --overlap --csv results/training.csv --loss-log results/loss_tree_overlap_r2.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.230 s
+epoch 2  loss 0.30289  time 0.228 s
+epoch 3  loss 0.25552  time 0.228 s
+epoch 4  loss 0.22493  time 0.227 s
+epoch 5  loss 0.20050  time 0.228 s
+epoch 6  loss 0.18171  time 0.227 s
+epoch 7  loss 0.16578  time 0.227 s
+epoch 8  loss 0.15284  time 0.226 s
+epoch 9  loss 0.14116  time 0.226 s
+epoch 10  loss 0.13165  time 0.229 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.4% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --csv results/training.csv --loss-log results/loss_tree_r3.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.228 s
+epoch 2  loss 0.30289  time 0.226 s
+epoch 3  loss 0.25552  time 0.226 s
+epoch 4  loss 0.22493  time 0.226 s
+epoch 5  loss 0.20050  time 0.226 s
+epoch 6  loss 0.18171  time 0.225 s
+epoch 7  loss 0.16578  time 0.225 s
+epoch 8  loss 0.15284  time 0.225 s
+epoch 9  loss 0.14116  time 0.225 s
+epoch 10  loss 0.13165  time 0.225 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.8% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --overlap --csv results/training.csv --loss-log results/loss_tree_overlap_r3.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.230 s
+epoch 2  loss 0.30289  time 0.227 s
+epoch 3  loss 0.25552  time 0.225 s
+epoch 4  loss 0.22493  time 0.227 s
+epoch 5  loss 0.20050  time 0.227 s
+epoch 6  loss 0.18171  time 0.226 s
+epoch 7  loss 0.16578  time 0.230 s
+epoch 8  loss 0.15284  time 0.227 s
+epoch 9  loss 0.14116  time 0.226 s
+epoch 10  loss 0.13165  time 0.226 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.0% of step time
+[exit 0]
+
+$ ./bin/bench_allreduce --method tree --gpus 2 --max 67108864 --csv results/allreduce.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.0295        0.139       ok
+        8192       0.0305        0.269       ok
+       16384       0.0399        0.410       ok
+       32768       0.0433        0.757       ok
+       65536       0.0521        1.258       ok
+      131072       0.0716        1.831       ok
+      262144       0.1013        2.587       ok
+      524288       0.1597        3.283       ok
+     1048576       0.2621        4.000       ok
+     2097152       0.4861        4.314       ok
+     4194304       0.9705        4.322       ok
+     8388608       1.9167        4.376       ok
+    16777216       3.7872        4.430       ok
+    33554432       7.5150        4.465       ok
+    67108864      15.0012        4.474       ok
+CORRECTNESS: all sizes passed
+[exit 0]
+
+$ ./bin/bench_allreduce --method ring --gpus 2 --check-only --max 67108864
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --csv results/training.csv --loss-log results/loss_ring_r1.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.263 s
+epoch 2  loss 0.30289  time 0.225 s
+epoch 3  loss 0.25552  time 0.225 s
+epoch 4  loss 0.22493  time 0.224 s
+epoch 5  loss 0.20050  time 0.226 s
+epoch 6  loss 0.18171  time 0.237 s
+epoch 7  loss 0.16578  time 0.226 s
+epoch 8  loss 0.15284  time 0.224 s
+epoch 9  loss 0.14116  time 0.223 s
+epoch 10  loss 0.13165  time 0.224 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.4% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --overlap --csv results/training.csv --loss-log results/loss_ring_overlap_r1.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.231 s
+epoch 2  loss 0.30289  time 0.228 s
+epoch 3  loss 0.25552  time 0.227 s
+epoch 4  loss 0.22493  time 0.228 s
+epoch 5  loss 0.20050  time 0.227 s
+epoch 6  loss 0.18171  time 0.227 s
+epoch 7  loss 0.16578  time 0.227 s
+epoch 8  loss 0.15284  time 0.227 s
+epoch 9  loss 0.14116  time 0.226 s
+epoch 10  loss 0.13165  time 0.227 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --csv results/training.csv --loss-log results/loss_ring_r2.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.228 s
+epoch 2  loss 0.30289  time 0.225 s
+epoch 3  loss 0.25552  time 0.224 s
+epoch 4  loss 0.22493  time 0.227 s
+epoch 5  loss 0.20050  time 0.225 s
+epoch 6  loss 0.18171  time 0.227 s
+epoch 7  loss 0.16578  time 0.224 s
+epoch 8  loss 0.15284  time 0.229 s
+epoch 9  loss 0.14116  time 0.225 s
+epoch 10  loss 0.13165  time 0.223 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 49.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --overlap --csv results/training.csv --loss-log results/loss_ring_overlap_r2.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.229 s
+epoch 2  loss 0.30289  time 0.226 s
+epoch 3  loss 0.25552  time 0.226 s
+epoch 4  loss 0.22493  time 0.232 s
+epoch 5  loss 0.20050  time 0.227 s
+epoch 6  loss 0.18171  time 0.226 s
+epoch 7  loss 0.16578  time 0.226 s
+epoch 8  loss 0.15284  time 0.226 s
+epoch 9  loss 0.14116  time 0.226 s
+epoch 10  loss 0.13165  time 0.226 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.9% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --csv results/training.csv --loss-log results/loss_ring_r3.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.225 s
+epoch 2  loss 0.30289  time 0.224 s
+epoch 3  loss 0.25552  time 0.223 s
+epoch 4  loss 0.22493  time 0.223 s
+epoch 5  loss 0.20050  time 0.222 s
+epoch 6  loss 0.18171  time 0.224 s
+epoch 7  loss 0.16578  time 0.224 s
+epoch 8  loss 0.15284  time 0.224 s
+epoch 9  loss 0.14116  time 0.223 s
+epoch 10  loss 0.13165  time 0.223 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 49.8% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --overlap --csv results/training.csv --loss-log results/loss_ring_overlap_r3.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.230 s
+epoch 2  loss 0.30289  time 0.227 s
+epoch 3  loss 0.25552  time 0.228 s
+epoch 4  loss 0.22493  time 0.227 s
+epoch 5  loss 0.20050  time 0.227 s
+epoch 6  loss 0.18171  time 0.228 s
+epoch 7  loss 0.16578  time 0.228 s
+epoch 8  loss 0.15284  time 0.229 s
+epoch 9  loss 0.14116  time 0.229 s
+epoch 10  loss 0.13165  time 0.230 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 51.0% of step time
+[exit 0]
+
+$ ./bin/bench_allreduce --method ring --gpus 2 --max 67108864 --csv results/allreduce.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.0529        0.077       ok
+        8192       0.0524        0.156       ok
+       16384       0.0532        0.308       ok
+       32768       0.0542        0.605       ok
+       65536       0.0599        1.094       ok
+      131072       0.0774        1.693       ok
+      262144       0.0985        2.662       ok
+      524288       0.1551        3.379       ok
+     1048576       0.2723        3.850       ok
+     2097152       0.4821        4.350       ok
+     4194304       0.9262        4.529       ok
+     8388608       1.8238        4.600       ok
+    16777216       3.6079        4.650       ok
+    33554432       7.1705        4.679       ok
+    67108864      14.2980        4.694       ok
+CORRECTNESS: all sizes passed
+[exit 0]
+
+$ ./bin/bench_allreduce --method rd --gpus 2 --check-only --max 67108864
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --csv results/training.csv --loss-log results/loss_rd_r1.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.232 s
+epoch 2  loss 0.30289  time 0.229 s
+epoch 3  loss 0.25552  time 0.230 s
+epoch 4  loss 0.22493  time 0.230 s
+epoch 5  loss 0.20050  time 0.228 s
+epoch 6  loss 0.18171  time 0.228 s
+epoch 7  loss 0.16578  time 0.230 s
+epoch 8  loss 0.15284  time 0.229 s
+epoch 9  loss 0.14116  time 0.229 s
+epoch 10  loss 0.13165  time 0.228 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 49.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --overlap --csv results/training.csv --loss-log results/loss_rd_overlap_r1.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.226 s
+epoch 2  loss 0.30289  time 0.225 s
+epoch 3  loss 0.25552  time 0.224 s
+epoch 4  loss 0.22493  time 0.224 s
+epoch 5  loss 0.20050  time 0.224 s
+epoch 6  loss 0.18171  time 0.224 s
+epoch 7  loss 0.16578  time 0.225 s
+epoch 8  loss 0.15284  time 0.223 s
+epoch 9  loss 0.14116  time 0.224 s
+epoch 10  loss 0.13165  time 0.224 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 49.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --csv results/training.csv --loss-log results/loss_rd_r2.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.231 s
+epoch 2  loss 0.30289  time 0.228 s
+epoch 3  loss 0.25552  time 0.230 s
+epoch 4  loss 0.22493  time 0.228 s
+epoch 5  loss 0.20050  time 0.234 s
+epoch 6  loss 0.18171  time 0.228 s
+epoch 7  loss 0.16578  time 0.227 s
+epoch 8  loss 0.15284  time 0.226 s
+epoch 9  loss 0.14116  time 0.228 s
+epoch 10  loss 0.13165  time 0.227 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --overlap --csv results/training.csv --loss-log results/loss_rd_overlap_r2.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.228 s
+epoch 2  loss 0.30289  time 0.227 s
+epoch 3  loss 0.25552  time 0.225 s
+epoch 4  loss 0.22493  time 0.225 s
+epoch 5  loss 0.20050  time 0.226 s
+epoch 6  loss 0.18171  time 0.227 s
+epoch 7  loss 0.16578  time 0.227 s
+epoch 8  loss 0.15284  time 0.225 s
+epoch 9  loss 0.14116  time 0.225 s
+epoch 10  loss 0.13165  time 0.224 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 49.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --csv results/training.csv --loss-log results/loss_rd_r3.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.225 s
+epoch 2  loss 0.30289  time 0.224 s
+epoch 3  loss 0.25552  time 0.224 s
+epoch 4  loss 0.22493  time 0.224 s
+epoch 5  loss 0.20050  time 0.223 s
+epoch 6  loss 0.18171  time 0.224 s
+epoch 7  loss 0.16578  time 0.225 s
+epoch 8  loss 0.15284  time 0.224 s
+epoch 9  loss 0.14116  time 0.224 s
+epoch 10  loss 0.13165  time 0.224 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 50.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --overlap --csv results/training.csv --loss-log results/loss_rd_overlap_r3.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=1 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.226 s
+epoch 2  loss 0.30289  time 0.225 s
+epoch 3  loss 0.25552  time 0.223 s
+epoch 4  loss 0.22493  time 0.224 s
+epoch 5  loss 0.20050  time 0.223 s
+epoch 6  loss 0.18171  time 0.223 s
+epoch 7  loss 0.16578  time 0.227 s
+epoch 8  loss 0.15284  time 0.224 s
+epoch 9  loss 0.14116  time 0.229 s
+epoch 10  loss 0.13165  time 0.223 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9614   exposed comm 49.8% of step time
+[exit 0]
+
+$ ./bin/bench_allreduce --method rd --gpus 2 --max 67108864 --csv results/allreduce.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.0322        0.127       ok
+        8192       0.0322        0.255       ok
+       16384       0.0338        0.485       ok
+       32768       0.0337        0.973       ok
+       65536       0.0376        1.742       ok
+      131072       0.0472        2.778       ok
+      262144       0.0778        3.371       ok
+      524288       0.1351        3.881       ok
+     1048576       0.2365        4.433       ok
+     2097152       0.4560        4.599       ok
+     4194304       0.9553        4.391       ok
+     8388608       1.8828        4.455       ok
+    16777216       3.7475        4.477       ok
+    33554432       7.4913        4.479       ok
+    67108864      14.9795        4.480       ok
+CORRECTNESS: all sizes passed
+[exit 0]

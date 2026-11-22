@@ -1,0 +1,238 @@
+
+$ nvidia-smi; nvcc --version
+Sun Nov 22 13:38:38 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.178.04             Driver Version: 580.178.04     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |
+| N/A   49C    P8              9W /   70W |       0MiB /  15360MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  Tesla T4                       Off |   00000000:00:05.0 Off |                    0 |
+| N/A   36C    P8              9W /   70W |       0MiB /  15360MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Aug_20_01:58:59_PM_PDT_2025
+Cuda compilation tools, release 13.0, V13.0.88
+Build cuda_13.0.r13.0/compiler.36424714_0
+[exit 0]
+
+$ git clone --depth 1 -b matmul-profile https://github.com/infinityrbx/HPC_20261B_GroupN_DataParallelSGD_CUDA repo
+Cloning into 'repo'...
+[exit 0]
+
+$ make data && make ARCH=sm_75
+bash scripts/get_mnist.sh data
+downloading train-images-idx3-ubyte
+downloading train-labels-idx1-ubyte
+downloading t10k-images-idx3-ubyte
+downloading t10k-labels-idx1-ubyte
+total 53680
+drwxr-xr-x  2 root root     4096 Nov 22 13:38 .
+drwxr-xr-x 12 root root     4096 Nov 22 13:38 ..
+-rw-r--r--  1 root root  7840016 Nov 22 13:38 t10k-images-idx3-ubyte
+-rw-r--r--  1 root root    10008 Nov 22 13:38 t10k-labels-idx1-ubyte
+-rw-r--r--  1 root root 47040016 Nov 22 13:38 train-images-idx3-ubyte
+-rw-r--r--  1 root root    60008 Nov 22 13:38 train-labels-idx1-ubyte
+mkdir -p bin
+cc -O2 -Wall -Wextra -std=gnu11 -o bin/mlp_seq seq/mlp_seq.c common/mnist.c common/params.c -lm
+cc -O2 -Wall -Wextra -std=gnu11 -c -o bin/mnist.o common/mnist.c
+cc -O2 -Wall -Wextra -std=gnu11 -c -o bin/params.o common/params.c
+nvcc -O2 -arch=sm_75 -std=c++14 -Xcompiler -Wall -o bin/train_dp cuda/train_dp.cu cuda/kernels.cu allreduce/common.cu allreduce/registry.cu allreduce/host_ref.cu allreduce/tree.cu allreduce/ring.cu allreduce/rd.cu bin/mnist.o bin/params.o
+nvcc -O2 -arch=sm_75 -std=c++14 -Xcompiler -Wall -o bin/bench_allreduce bench/bench_allreduce.cu allreduce/common.cu allreduce/registry.cu allreduce/host_ref.cu allreduce/tree.cu allreduce/ring.cu allreduce/rd.cu
+[exit 0]
+nsys: /usr/local/bin/nsys
+ncu:  /usr/local/cuda/bin/ncu
+
+$ /usr/local/bin/nsys profile -o prof_h512 --force-overwrite true -t cuda ./bin/train_dp --gpus 1 --epochs 1 --hidden 512
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.274 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9116   exposed comm 0.4% of step time
+method,k,msg_bytes,time_ms,busbw_GBs,epoch_s,comm_pct,test_acc
+gpu1,1,1628200,-1.000000,-1.0000,0.2743,0.365,0.9116
+Collecting data...
+Generating '/tmp/nsys-report-4724.qdstrm'
+[1/1] [0%                          ] prof_h512.nsys-rep[1/1] [0%                          ] prof_h512.nsys-rep[1/1] [===================80%      ] prof_h512.nsys-rep[1/1] [========================100%] prof_h512.nsys-rep[1/1] [========================100%] prof_h512.nsys-rep
+Generated:
+	/kaggle/working/repo/prof_h512.nsys-rep
+[exit 0]
+
+$ /usr/local/bin/nsys stats -r cuda_gpu_kern_sum -f csv -o prof_h512 prof_h512.nsys-rep
+Generating SQLite file prof_h512.sqlite from prof_h512.nsys-rep
+Processing [prof_h512.sqlite] with [/opt/nvidia/nsight-compute/2025.3.1/host/target-linux-x64/reports/cuda_gpu_kern_sum.py] to [prof_h512_cuda_gpu_kern_sum.csv]... PROCESSED
+
+[exit 0]
+
+$ python3 scripts/kernel_share.py --nsys prof_h512_cuda_gpu_kern_sum.csv --hidden 512 --csv kernel_share.csv
+H = 512: total kernel time 220.70 ms
+kernel                   calls        ms    share
+k_matmul_tiled            1250    208.51    94.5%
+k_colsum                   468      3.92     1.8%
+k_sgd                      234      3.55     1.6%
+k_bias_relu                548      1.88     0.9%
+k_softmax_xent             274      1.87     0.8%
+k_relu_backward            234      0.96     0.4%
+MATMUL SHARE (H = 512): 94.5% of GPU kernel time
+[exit 0]
+
+$ /usr/local/bin/nsys profile -o prof_h1024 --force-overwrite true -t cuda ./bin/train_dp --gpus 1 --epochs 1 --hidden 1024
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=1024 params=814090 (3.26 MB) local_batch=256
+epoch 1  loss 0.54751  time 0.410 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9148   exposed comm 0.2% of step time
+method,k,msg_bytes,time_ms,busbw_GBs,epoch_s,comm_pct,test_acc
+gpu1,1,3256360,-1.000000,-1.0000,0.4095,0.216,0.9148
+Collecting data...
+Generating '/tmp/nsys-report-fb08.qdstrm'
+[1/1] [0%                          ] prof_h1024.nsys-rep[1/1] [0%                          ] prof_h1024.nsys-rep[1/1] [===================80%      ] prof_h1024.nsys-rep[1/1] [========================100%] prof_h1024.nsys-rep[1/1] [========================100%] prof_h1024.nsys-rep
+Generated:
+	/kaggle/working/repo/prof_h1024.nsys-rep
+[exit 0]
+
+$ /usr/local/bin/nsys stats -r cuda_gpu_kern_sum -f csv -o prof_h1024 prof_h1024.nsys-rep
+Generating SQLite file prof_h1024.sqlite from prof_h1024.nsys-rep
+Processing [prof_h1024.sqlite] with [/opt/nvidia/nsight-compute/2025.3.1/host/target-linux-x64/reports/cuda_gpu_kern_sum.py] to [prof_h1024_cuda_gpu_kern_sum.csv]... PROCESSED
+
+[exit 0]
+
+$ python3 scripts/kernel_share.py --nsys prof_h1024_cuda_gpu_kern_sum.csv --hidden 1024 --csv kernel_share.csv
+H = 1024: total kernel time 368.08 ms
+kernel                   calls        ms    share
+k_matmul_tiled            1250    349.67    95.0%
+k_sgd                      234      8.99     2.4%
+k_colsum                   468      3.47     0.9%
+k_bias_relu                548      2.99     0.8%
+k_softmax_xent             274      1.67     0.5%
+k_relu_backward            234      1.29     0.4%
+MATMUL SHARE (H = 1024): 95.0% of GPU kernel time
+[exit 0]
+
+$ /usr/local/bin/nsys profile -o prof_h2048 --force-overwrite true -t cuda ./bin/train_dp --gpus 1 --epochs 1 --hidden 2048
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=2048 params=1628170 (6.51 MB) local_batch=256
+epoch 1  loss 0.53148  time 0.735 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9152   exposed comm 0.1% of step time
+method,k,msg_bytes,time_ms,busbw_GBs,epoch_s,comm_pct,test_acc
+gpu1,1,6512680,-1.000000,-1.0000,0.7345,0.118,0.9152
+Collecting data...
+Generating '/tmp/nsys-report-01d3.qdstrm'
+[1/1] [0%                          ] prof_h2048.nsys-rep[1/1] [0%                          ] prof_h2048.nsys-rep[1/1] [===================80%      ] prof_h2048.nsys-rep[1/1] [========================100%] prof_h2048.nsys-rep[1/1] [========================100%] prof_h2048.nsys-rep
+Generated:
+	/kaggle/working/repo/prof_h2048.nsys-rep
+[exit 0]
+
+$ /usr/local/bin/nsys stats -r cuda_gpu_kern_sum -f csv -o prof_h2048 prof_h2048.nsys-rep
+Generating SQLite file prof_h2048.sqlite from prof_h2048.nsys-rep
+Processing [prof_h2048.sqlite] with [/opt/nvidia/nsight-compute/2025.3.1/host/target-linux-x64/reports/cuda_gpu_kern_sum.py] to [prof_h2048_cuda_gpu_kern_sum.csv]... PROCESSED
+
+[exit 0]
+
+$ python3 scripts/kernel_share.py --nsys prof_h2048_cuda_gpu_kern_sum.csv --hidden 2048 --csv kernel_share.csv
+H = 2048: total kernel time 715.21 ms
+kernel                   calls        ms    share
+k_matmul_tiled            1250    683.18    95.5%
+k_sgd                      234     17.95     2.5%
+k_bias_relu                548      5.71     0.8%
+k_relu_backward            234      3.38     0.5%
+k_colsum                   468      3.34     0.5%
+k_softmax_xent             274      1.64     0.2%
+MATMUL SHARE (H = 2048): 95.5% of GPU kernel time
+[exit 0]
+
+$ python3 scripts/flops.py --hidden 512 1024 2048
+
+MLP 784-512-10, batch 256, 407,050 params
+  fwd  Z1 = X . W1            205.52 MFLOP
+  fwd  Z2 = A1 . W2             2.62 MFLOP
+  bwd  dW2 = A1^T . dZ2         2.62 MFLOP
+  bwd  dA1 = dZ2 . W2^T         2.62 MFLOP
+  bwd  dW1 = X^T . dA1        205.52 MFLOP
+  bias + relu                   0.26 MFLOP
+  softmax + xent grad           0.01 MFLOP
+  relu backward                 0.13 MFLOP
+  bias grads (colsum)           0.13 MFLOP
+  sgd update                    0.81 MFLOP
+  matmul 418.9 MFLOP, other 1.36 MFLOP -> matmul = 99.68% of FLOPs
+  per sample 1.64 MFLOP; per epoch (60k) 98.2 GFLOP
+
+MLP 784-1024-10, batch 256, 814,090 params
+  fwd  Z1 = X . W1            411.04 MFLOP
+  fwd  Z2 = A1 . W2             5.24 MFLOP
+  bwd  dW2 = A1^T . dZ2         5.24 MFLOP
+  bwd  dA1 = dZ2 . W2^T         5.24 MFLOP
+  bwd  dW1 = X^T . dA1        411.04 MFLOP
+  bias + relu                   0.53 MFLOP
+  softmax + xent grad           0.01 MFLOP
+  relu backward                 0.26 MFLOP
+  bias grads (colsum)           0.26 MFLOP
+  sgd update                    1.63 MFLOP
+  matmul 837.8 MFLOP, other 2.69 MFLOP -> matmul = 99.68% of FLOPs
+  per sample 3.27 MFLOP; per epoch (60k) 196.4 GFLOP
+
+MLP 784-2048-10, batch 256, 1,628,170 params
+  fwd  Z1 = X . W1            822.08 MFLOP
+  fwd  Z2 = A1 . W2            10.49 MFLOP
+  bwd  dW2 = A1^T . dZ2        10.49 MFLOP
+  bwd  dA1 = dZ2 . W2^T        10.49 MFLOP
+  bwd  dW1 = X^T . dA1        822.08 MFLOP
+  bias + relu                   1.05 MFLOP
+  softmax + xent grad           0.01 MFLOP
+  relu backward                 0.52 MFLOP
+  bias grads (colsum)           0.53 MFLOP
+  sgd update                    3.26 MFLOP
+  matmul 1675.6 MFLOP, other 5.37 MFLOP -> matmul = 99.68% of FLOPs
+  per sample 6.55 MFLOP; per epoch (60k) 392.7 GFLOP
+
+Conv 3x3, 32->64 channels, 28x28 output, as im2col + matmul:
+  im2col matrix 784 x 288, weights 288 x 64 -> one (784x288)(288x64) matmul = 28.9 MFLOP per image
+[exit 0]
+
+$ cat kernel_share.csv
+hidden,kernel,calls,time_ms,share_pct
+512,k_matmul_tiled,1250,208.5112,94.48
+512,k_colsum,468,3.9160,1.77
+512,k_sgd,234,3.5478,1.61
+512,k_bias_relu,548,1.8837,0.85
+512,k_softmax_xent,274,1.8745,0.85
+512,k_relu_backward,234,0.9625,0.44
+1024,k_matmul_tiled,1250,349.6689,95.00
+1024,k_sgd,234,8.9895,2.44
+1024,k_colsum,468,3.4654,0.94
+1024,k_bias_relu,548,2.9905,0.81
+1024,k_softmax_xent,274,1.6702,0.45
+1024,k_relu_backward,234,1.2904,0.35
+2048,k_matmul_tiled,1250,683.1845,95.52
+2048,k_sgd,234,17.9522,2.51
+2048,k_bias_relu,548,5.7085,0.80
+2048,k_relu_backward,234,3.3848,0.47
+2048,k_colsum,468,3.3400,0.47
+2048,k_softmax_xent,274,1.6390,0.23
+[exit 0]
+/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\|'
+  cells[i][c] = re.sub('\\\\\|', '|', cell)
+/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\_'
+  text = re.sub(r'_', '\_', text) # Escape underscores in display text
+[NbConvertApp] Converting notebook __script__.ipynb to html
+[NbConvertApp] Writing 281817 bytes to __results__.html
+

@@ -1,0 +1,890 @@
+
+$ git log -1 --format='commit %H %s'
+commit fbfbf968c453f41e96c2262b7392e70f4efc6de7 Add Kaggle batch-size sweep (1 vs 2 GPUs) and its summarizer
+[exit 0]
+
+$ nvidia-smi; nvidia-smi topo -m
+Sun Nov 22 19:48:38 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.178.04             Driver Version: 580.178.04     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |
+| N/A   51C    P8             11W /   70W |       0MiB /  15360MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  Tesla T4                       Off |   00000000:00:05.0 Off |                    0 |
+| N/A   50C    P8             12W /   70W |       0MiB /  15360MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+	[4mGPU0	GPU1	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	PHB	0-3	0		N/A
+GPU1	PHB	 X 	0-3	0		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+[exit 0]
+
+$ make data && make ARCH=sm_75
+bash scripts/get_mnist.sh data
+downloading train-images-idx3-ubyte
+downloading train-labels-idx1-ubyte
+downloading t10k-images-idx3-ubyte
+downloading t10k-labels-idx1-ubyte
+total 53680
+drwxr-xr-x  2 root root     4096 Nov 22 19:48 .
+drwxr-xr-x 10 root root     4096 Nov 22 19:48 ..
+-rw-r--r--  1 root root  7840016 Nov 22 19:48 t10k-images-idx3-ubyte
+-rw-r--r--  1 root root    10008 Nov 22 19:48 t10k-labels-idx1-ubyte
+-rw-r--r--  1 root root 47040016 Nov 22 19:48 train-images-idx3-ubyte
+-rw-r--r--  1 root root    60008 Nov 22 19:48 train-labels-idx1-ubyte
+mkdir -p bin
+cc -O2 -Wall -Wextra -std=gnu11 -o bin/mlp_seq src/seq/mlp_seq.c src/common/mnist.c src/common/params.c -lm
+cc -O2 -Wall -Wextra -std=gnu11 -c -o bin/mnist.o src/common/mnist.c
+cc -O2 -Wall -Wextra -std=gnu11 -c -o bin/params.o src/common/params.c
+nvcc -O2 -arch=sm_75 -std=c++14 -Xcompiler -Wall -o bin/train_dp src/cuda/train_dp.cu src/cuda/kernels.cu src/allreduce/common.cu src/allreduce/registry.cu src/allreduce/host_ref.cu src/allreduce/tree.cu src/allreduce/ring.cu src/allreduce/rd.cu bin/mnist.o bin/params.o
+nvcc -O2 -arch=sm_75 -std=c++14 -Xcompiler -Wall -o bin/bench_allreduce bench/bench_allreduce.cu src/allreduce/common.cu src/allreduce/registry.cu src/allreduce/host_ref.cu src/allreduce/tree.cu src/allreduce/ring.cu src/allreduce/rd.cu
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.318 s
+epoch 2  loss 0.30288  time 0.199 s
+epoch 3  loss 0.25552  time 0.199 s
+epoch 4  loss 0.22493  time 0.197 s
+epoch 5  loss 0.20050  time 0.199 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9468   exposed comm 0.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.281 s
+epoch 2  loss 0.30289  time 0.233 s
+epoch 3  loss 0.25552  time 0.231 s
+epoch 4  loss 0.22493  time 0.232 s
+epoch 5  loss 0.20050  time 0.228 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 53.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.225 s
+epoch 2  loss 0.30289  time 0.223 s
+epoch 3  loss 0.25552  time 0.222 s
+epoch 4  loss 0.22493  time 0.224 s
+epoch 5  loss 0.20050  time 0.226 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 49.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.228 s
+epoch 2  loss 0.30289  time 0.227 s
+epoch 3  loss 0.25552  time 0.226 s
+epoch 4  loss 0.22493  time 0.226 s
+epoch 5  loss 0.20050  time 0.226 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 49.9% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.201 s
+epoch 2  loss 0.30288  time 0.200 s
+epoch 3  loss 0.25552  time 0.198 s
+epoch 4  loss 0.22493  time 0.199 s
+epoch 5  loss 0.20050  time 0.198 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9468   exposed comm 0.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.297 s
+epoch 2  loss 0.30289  time 0.236 s
+epoch 3  loss 0.25552  time 0.228 s
+epoch 4  loss 0.22493  time 0.227 s
+epoch 5  loss 0.20050  time 0.228 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 54.4% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.227 s
+epoch 2  loss 0.30289  time 0.225 s
+epoch 3  loss 0.25552  time 0.225 s
+epoch 4  loss 0.22493  time 0.226 s
+epoch 5  loss 0.20050  time 0.225 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 49.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.227 s
+epoch 2  loss 0.30289  time 0.225 s
+epoch 3  loss 0.25552  time 0.234 s
+epoch 4  loss 0.22493  time 0.224 s
+epoch 5  loss 0.20050  time 0.223 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 49.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.203 s
+epoch 2  loss 0.30288  time 0.202 s
+epoch 3  loss 0.25552  time 0.200 s
+epoch 4  loss 0.22493  time 0.199 s
+epoch 5  loss 0.20050  time 0.199 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9468   exposed comm 0.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.306 s
+epoch 2  loss 0.30289  time 0.239 s
+epoch 3  loss 0.25552  time 0.228 s
+epoch 4  loss 0.22493  time 0.227 s
+epoch 5  loss 0.20050  time 0.226 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 54.9% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.229 s
+epoch 2  loss 0.30289  time 0.226 s
+epoch 3  loss 0.25552  time 0.228 s
+epoch 4  loss 0.22493  time 0.226 s
+epoch 5  loss 0.20050  time 0.225 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 49.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 256 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.230 s
+epoch 2  loss 0.30289  time 0.227 s
+epoch 3  loss 0.25552  time 0.227 s
+epoch 4  loss 0.22493  time 0.227 s
+epoch 5  loss 0.20050  time 0.227 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 50.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.00081  time 0.191 s
+epoch 2  loss 0.47493  time 0.192 s
+epoch 3  loss 0.38963  time 0.194 s
+epoch 4  loss 0.34902  time 0.190 s
+epoch 5  loss 0.32347  time 0.191 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 0.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=512
+epoch 1  loss 1.00080  time 0.241 s
+epoch 2  loss 0.47493  time 0.181 s
+epoch 3  loss 0.38963  time 0.152 s
+epoch 4  loss 0.34902  time 0.143 s
+epoch 5  loss 0.32348  time 0.144 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 39.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=512
+epoch 1  loss 1.00080  time 0.145 s
+epoch 2  loss 0.47493  time 0.144 s
+epoch 3  loss 0.38963  time 0.143 s
+epoch 4  loss 0.34902  time 0.142 s
+epoch 5  loss 0.32348  time 0.143 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 22.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=512
+epoch 1  loss 1.00080  time 0.146 s
+epoch 2  loss 0.47493  time 0.142 s
+epoch 3  loss 0.38963  time 0.141 s
+epoch 4  loss 0.34902  time 0.140 s
+epoch 5  loss 0.32348  time 0.141 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 22.8% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.00081  time 0.190 s
+epoch 2  loss 0.47493  time 0.189 s
+epoch 3  loss 0.38963  time 0.189 s
+epoch 4  loss 0.34902  time 0.189 s
+epoch 5  loss 0.32347  time 0.188 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 0.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=512
+epoch 1  loss 1.00080  time 0.217 s
+epoch 2  loss 0.47493  time 0.175 s
+epoch 3  loss 0.38963  time 0.144 s
+epoch 4  loss 0.34902  time 0.142 s
+epoch 5  loss 0.32348  time 0.142 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 35.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=512
+epoch 1  loss 1.00080  time 0.142 s
+epoch 2  loss 0.47493  time 0.140 s
+epoch 3  loss 0.38963  time 0.139 s
+epoch 4  loss 0.34902  time 0.139 s
+epoch 5  loss 0.32348  time 0.142 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 22.2% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=512
+epoch 1  loss 1.00080  time 0.144 s
+epoch 2  loss 0.47493  time 0.142 s
+epoch 3  loss 0.38963  time 0.141 s
+epoch 4  loss 0.34902  time 0.141 s
+epoch 5  loss 0.32348  time 0.141 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 22.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.00081  time 0.189 s
+epoch 2  loss 0.47493  time 0.188 s
+epoch 3  loss 0.38963  time 0.189 s
+epoch 4  loss 0.34902  time 0.190 s
+epoch 5  loss 0.32347  time 0.190 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 0.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=512
+epoch 1  loss 1.00080  time 0.205 s
+epoch 2  loss 0.47493  time 0.156 s
+epoch 3  loss 0.38963  time 0.144 s
+epoch 4  loss 0.34902  time 0.142 s
+epoch 5  loss 0.32348  time 0.141 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 33.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=512
+epoch 1  loss 1.00080  time 0.146 s
+epoch 2  loss 0.47493  time 0.142 s
+epoch 3  loss 0.38963  time 0.142 s
+epoch 4  loss 0.34902  time 0.142 s
+epoch 5  loss 0.32348  time 0.143 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 22.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 1024 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=512
+epoch 1  loss 1.00080  time 0.145 s
+epoch 2  loss 0.47493  time 0.142 s
+epoch 3  loss 0.38963  time 0.142 s
+epoch 4  loss 0.34902  time 0.143 s
+epoch 5  loss 0.32348  time 0.143 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9171   exposed comm 22.8% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.34174  time 0.196 s
+epoch 2  loss 0.65668  time 0.196 s
+epoch 3  loss 0.50631  time 0.196 s
+epoch 4  loss 0.44019  time 0.197 s
+epoch 5  loss 0.40147  time 0.195 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 0.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.34173  time 0.197 s
+epoch 2  loss 0.65668  time 0.137 s
+epoch 3  loss 0.50630  time 0.129 s
+epoch 4  loss 0.44019  time 0.127 s
+epoch 5  loss 0.40148  time 0.128 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 25.4% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.34173  time 0.130 s
+epoch 2  loss 0.65668  time 0.132 s
+epoch 3  loss 0.50630  time 0.129 s
+epoch 4  loss 0.44019  time 0.127 s
+epoch 5  loss 0.40148  time 0.127 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 12.9% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.34173  time 0.130 s
+epoch 2  loss 0.65668  time 0.129 s
+epoch 3  loss 0.50630  time 0.129 s
+epoch 4  loss 0.44019  time 0.128 s
+epoch 5  loss 0.40148  time 0.129 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 13.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.34174  time 0.196 s
+epoch 2  loss 0.65668  time 0.194 s
+epoch 3  loss 0.50631  time 0.193 s
+epoch 4  loss 0.44019  time 0.194 s
+epoch 5  loss 0.40147  time 0.199 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 0.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.34173  time 0.234 s
+epoch 2  loss 0.65668  time 0.163 s
+epoch 3  loss 0.50630  time 0.138 s
+epoch 4  loss 0.44019  time 0.128 s
+epoch 5  loss 0.40148  time 0.128 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 34.7% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.34173  time 0.129 s
+epoch 2  loss 0.65668  time 0.128 s
+epoch 3  loss 0.50630  time 0.127 s
+epoch 4  loss 0.44019  time 0.127 s
+epoch 5  loss 0.40148  time 0.127 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 12.8% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.34173  time 0.133 s
+epoch 2  loss 0.65668  time 0.129 s
+epoch 3  loss 0.50630  time 0.129 s
+epoch 4  loss 0.44019  time 0.128 s
+epoch 5  loss 0.40148  time 0.128 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 13.3% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.34174  time 0.199 s
+epoch 2  loss 0.65668  time 0.199 s
+epoch 3  loss 0.50631  time 0.194 s
+epoch 4  loss 0.44019  time 0.194 s
+epoch 5  loss 0.40147  time 0.198 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 0.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.34173  time 0.205 s
+epoch 2  loss 0.65668  time 0.142 s
+epoch 3  loss 0.50630  time 0.133 s
+epoch 4  loss 0.44019  time 0.129 s
+epoch 5  loss 0.40148  time 0.129 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 27.3% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.34173  time 0.131 s
+epoch 2  loss 0.65668  time 0.128 s
+epoch 3  loss 0.50630  time 0.128 s
+epoch 4  loss 0.44019  time 0.128 s
+epoch 5  loss 0.40148  time 0.128 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 12.9% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 2048 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.34173  time 0.132 s
+epoch 2  loss 0.65668  time 0.129 s
+epoch 3  loss 0.50630  time 0.128 s
+epoch 4  loss 0.44019  time 0.129 s
+epoch 5  loss 0.40148  time 0.128 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9030   exposed comm 13.3% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 1.72104  time 0.198 s
+epoch 2  loss 0.99889  time 0.198 s
+epoch 3  loss 0.72949  time 0.195 s
+epoch 4  loss 0.60660  time 0.197 s
+epoch 5  loss 0.53684  time 0.200 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 0.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.229 s
+epoch 2  loss 0.99890  time 0.163 s
+epoch 3  loss 0.72949  time 0.133 s
+epoch 4  loss 0.60661  time 0.121 s
+epoch 5  loss 0.53684  time 0.122 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 32.4% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.121 s
+epoch 2  loss 0.99889  time 0.121 s
+epoch 3  loss 0.72949  time 0.124 s
+epoch 4  loss 0.60661  time 0.125 s
+epoch 5  loss 0.53684  time 0.128 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 6.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.125 s
+epoch 2  loss 0.99889  time 0.124 s
+epoch 3  loss 0.72949  time 0.124 s
+epoch 4  loss 0.60661  time 0.125 s
+epoch 5  loss 0.53684  time 0.127 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 7.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 1.72104  time 0.193 s
+epoch 2  loss 0.99889  time 0.200 s
+epoch 3  loss 0.72949  time 0.196 s
+epoch 4  loss 0.60661  time 0.196 s
+epoch 5  loss 0.53684  time 0.199 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 0.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.189 s
+epoch 2  loss 0.99889  time 0.134 s
+epoch 3  loss 0.72949  time 0.126 s
+epoch 4  loss 0.60661  time 0.123 s
+epoch 5  loss 0.53684  time 0.123 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 22.4% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.123 s
+epoch 2  loss 0.99889  time 0.121 s
+epoch 3  loss 0.72949  time 0.120 s
+epoch 4  loss 0.60661  time 0.121 s
+epoch 5  loss 0.53684  time 0.120 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 6.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.124 s
+epoch 2  loss 0.99890  time 0.123 s
+epoch 3  loss 0.72949  time 0.124 s
+epoch 4  loss 0.60661  time 0.124 s
+epoch 5  loss 0.53684  time 0.122 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 7.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 1.72104  time 0.194 s
+epoch 2  loss 0.99889  time 0.197 s
+epoch 3  loss 0.72949  time 0.196 s
+epoch 4  loss 0.60661  time 0.197 s
+epoch 5  loss 0.53684  time 0.201 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 0.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.179 s
+epoch 2  loss 0.99889  time 0.150 s
+epoch 3  loss 0.72949  time 0.135 s
+epoch 4  loss 0.60661  time 0.123 s
+epoch 5  loss 0.53684  time 0.123 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 22.1% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.123 s
+epoch 2  loss 0.99889  time 0.124 s
+epoch 3  loss 0.72949  time 0.122 s
+epoch 4  loss 0.60661  time 0.128 s
+epoch 5  loss 0.53684  time 0.125 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 6.5% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 4096 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.122 s
+epoch 2  loss 0.99889  time 0.125 s
+epoch 3  loss 0.72949  time 0.121 s
+epoch 4  loss 0.60661  time 0.121 s
+epoch 5  loss 0.53684  time 0.121 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 6.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=8192
+epoch 1  loss 2.00146  time 0.204 s
+epoch 2  loss 1.44011  time 0.206 s
+epoch 3  loss 1.09823  time 0.204 s
+epoch 4  loss 0.89628  time 0.203 s
+epoch 5  loss 0.77104  time 0.205 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 0.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 2.00146  time 0.200 s
+epoch 2  loss 1.44011  time 0.139 s
+epoch 3  loss 1.09824  time 0.133 s
+epoch 4  loss 0.89628  time 0.127 s
+epoch 5  loss 0.77103  time 0.128 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 20.8% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 2.00146  time 0.131 s
+epoch 2  loss 1.44011  time 0.130 s
+epoch 3  loss 1.09824  time 0.134 s
+epoch 4  loss 0.89628  time 0.131 s
+epoch 5  loss 0.77103  time 0.129 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 4.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 2.00146  time 0.129 s
+epoch 2  loss 1.44011  time 0.128 s
+epoch 3  loss 1.09824  time 0.128 s
+epoch 4  loss 0.89628  time 0.130 s
+epoch 5  loss 0.77103  time 0.135 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 4.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=8192
+epoch 1  loss 2.00146  time 0.212 s
+epoch 2  loss 1.44011  time 0.208 s
+epoch 3  loss 1.09823  time 0.206 s
+epoch 4  loss 0.89628  time 0.209 s
+epoch 5  loss 0.77104  time 0.203 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 0.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 2.00146  time 0.196 s
+epoch 2  loss 1.44011  time 0.164 s
+epoch 3  loss 1.09824  time 0.138 s
+epoch 4  loss 0.89628  time 0.133 s
+epoch 5  loss 0.77103  time 0.130 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 20.9% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 2.00146  time 0.133 s
+epoch 2  loss 1.44011  time 0.136 s
+epoch 3  loss 1.09824  time 0.130 s
+epoch 4  loss 0.89628  time 0.131 s
+epoch 5  loss 0.77103  time 0.127 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 4.2% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 2.00146  time 0.132 s
+epoch 2  loss 1.44011  time 0.137 s
+epoch 3  loss 1.09824  time 0.131 s
+epoch 4  loss 0.89628  time 0.132 s
+epoch 5  loss 0.77103  time 0.131 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 5.6% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 1 --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=8192
+epoch 1  loss 2.00146  time 0.205 s
+epoch 2  loss 1.44011  time 0.207 s
+epoch 3  loss 1.09823  time 0.206 s
+epoch 4  loss 0.89628  time 0.204 s
+epoch 5  loss 0.77104  time 0.203 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 0.0% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method tree --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 2.00146  time 0.206 s
+epoch 2  loss 1.44011  time 0.150 s
+epoch 3  loss 1.09824  time 0.132 s
+epoch 4  loss 0.89628  time 0.132 s
+epoch 5  loss 0.77103  time 0.130 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 24.4% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method ring --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 2.00146  time 0.131 s
+epoch 2  loss 1.44011  time 0.132 s
+epoch 3  loss 1.09824  time 0.134 s
+epoch 4  loss 0.89628  time 0.132 s
+epoch 5  loss 0.77103  time 0.144 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 4.8% of step time
+[exit 0]
+
+$ ./bin/train_dp --gpus 2 --method rd --batch 8192 --epochs 5 --csv results/sweep.csv
+P2P matrix (row i can access column j):
+ 1 1
+ 1 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 2.00146  time 0.130 s
+epoch 2  loss 1.44011  time 0.128 s
+epoch 3  loss 1.09824  time 0.130 s
+epoch 4  loss 0.89628  time 0.126 s
+epoch 5  loss 0.77103  time 0.128 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8516   exposed comm 4.5% of step time
+[exit 0]
