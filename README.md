@@ -8,13 +8,17 @@ k GPU; gradient được lấy trung bình bằng các thuật toán allreduce t
 hay MPI). Bài báo chỉ phân tích chi phí truyền thông (O(L·k) + O(k·p/B)) về mặt lý thuyết; đề tài
 này đo nó trên thực tế.
 
-Mọi số liệu đo trên Kaggle, 2× Tesla T4, với thiết lập cố định (10 epoch) và lặp 3 lần mỗi cấu hình,
+Mục 1–6 đo trên Kaggle, 2× Tesla T4, với thiết lập cố định (10 epoch) và lặp 3 lần mỗi cấu hình,
 build từ chính repo này (commit 3fd2b8a). Kết quả và CSV gốc:
 [`runs/kaggle-final-2026-11-22/`](runs/kaggle-final-2026-11-22/) (huấn luyện và allreduce, kèm
 [`summary.md`](runs/kaggle-final-2026-11-22/summary.md)) và
 [`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (profile kernel) và
 [`runs/kaggle-sweep-2026-11-23/`](runs/kaggle-sweep-2026-11-23/) (quét kích thước batch). Lần chạy
 2 epoch trước đó được giữ trong [`runs/kaggle-2026-11-22/`](runs/kaggle-2026-11-22/).
+
+Mục 7 (mở rộng tới 4 GPU, NVLink so với PCIe) đo trên một máy RunPod có 4× A100-SXM4-80GB,
+5 epoch và lặp 3 lần mỗi cấu hình:
+[`runs/runpod-a100-2026-11-23/`](runs/runpod-a100-2026-11-23/).
 
 ## Tóm tắt
 
@@ -313,6 +317,14 @@ python3 scripts/summarize_runs.py results/final.log results/clocks.csv     # b�
 kaggle kernels push -p scripts/kaggle/sweep --accelerator NvidiaTeslaT4    # quét batch, 1 so với 2 GPU
 ```
 
+Trên máy nhiều GPU (ví dụ pod RunPod; `sm_80` = A100, `sm_86` = A40):
+
+```bash
+bash scripts/scaling.sh sm_80                      # k = 1, 2, 4, 8 tùy số GPU, bật truy cập P2P
+MODES="p2p host" bash scripts/scaling.sh sm_80     # chạy lại với P2P tắt (đi qua bộ nhớ host)
+AR_DISABLE_P2P=1 ./bin/bench_allreduce --method ring --gpus 4   # mọi chương trình: ép chép qua host
+```
+
 Các thiết lập cố định nằm trong `src/common/config.h`. Mọi file CSV có cùng các cột:
 `method,k,msg_bytes,time_ms,busbw_GBs,epoch_s,comm_pct,test_acc` (`-1` = không áp dụng;
 `comm_pct` = truyền thông không được che, tính theo % thời gian bước).
@@ -327,7 +339,8 @@ src/
   allreduce/  allreduce.h (giao diện), ar_sync.h, common.cu, registry.cu, mỗi phương pháp một file
 bench/        bench_allreduce.cu: kiểm tra tính đúng + đo độ trễ/băng thông
 tests/        sim_allreduce.cpp + CUDA runtime giả lập (make simcheck)
-scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, summarize_sweep.py, get_mnist.sh
+scripts/      run_experiments.sh, scaling.sh, flops.py, kernel_share.py, summarize_runs.py, summarize_sweep.py,
+              make_figures.py, get_mnist.sh
   kaggle/     check/ (kiểm tra nhanh), profile/ (profile kernel bằng nsys), final/ (lần chạy cuối), sweep/ (quét batch)
 runs/         log và CSV gốc (Kaggle 2× T4, RunPod 4× A100 SXM)
 ```

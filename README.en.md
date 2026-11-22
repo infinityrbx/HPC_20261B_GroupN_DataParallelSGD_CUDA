@@ -8,13 +8,17 @@ SGD on k GPUs, and the gradients are averaged with hand-written allreduce method
 cuBLAS or MPI). The paper analyses the communication cost (O(L·k) + O(k·p/B)) only in theory;
 this project measures it.
 
-All numbers come from Kaggle, 2× Tesla T4, with the fixed settings (10 epochs) and 3 repeats per
+Sections 1–6 come from Kaggle, 2× Tesla T4, with the fixed settings (10 epochs) and 3 repeats per
 configuration, built from this repository (commit 3fd2b8a). Results and raw CSVs:
 [`runs/kaggle-final-2026-11-22/`](runs/kaggle-final-2026-11-22/) (training and allreduce, with
 [`summary.md`](runs/kaggle-final-2026-11-22/summary.md)) and
 [`runs/kaggle-profile-2026-11-22/`](runs/kaggle-profile-2026-11-22/) (kernel profile) and
 [`runs/kaggle-sweep-2026-11-23/`](runs/kaggle-sweep-2026-11-23/) (batch-size sweep). An earlier
 2-epoch run is kept in [`runs/kaggle-2026-11-22/`](runs/kaggle-2026-11-22/).
+
+Section 7 (scaling to 4 GPUs, NVLink vs PCIe) comes from one RunPod machine with 4× A100-SXM4-80GB,
+5 epochs and 3 repeats per configuration:
+[`runs/runpod-a100-2026-11-23/`](runs/runpod-a100-2026-11-23/).
 
 ## Summary
 
@@ -314,6 +318,14 @@ python3 scripts/summarize_runs.py results/final.log results/clocks.csv     # med
 kaggle kernels push -p scripts/kaggle/sweep --accelerator NvidiaTeslaT4    # batch-size sweep, 1 vs 2 GPUs
 ```
 
+On a multi-GPU machine (for example a RunPod pod; `sm_80` = A100, `sm_86` = A40):
+
+```bash
+bash scripts/scaling.sh sm_80                      # k = 1, 2, 4, 8 as available, peer access on
+MODES="p2p host" bash scripts/scaling.sh sm_80     # also rerun with peer access off (via host memory)
+AR_DISABLE_P2P=1 ./bin/bench_allreduce --method ring --gpus 4   # any binary: force copies through the host
+```
+
 Fixed settings live in `src/common/config.h`. CSV columns everywhere:
 `method,k,msg_bytes,time_ms,busbw_GBs,epoch_s,comm_pct,test_acc` (`-1` = not applicable;
 `comm_pct` = exposed communication as a % of step time).
@@ -328,7 +340,8 @@ src/
   allreduce/  allreduce.h (interface), ar_sync.h, common.cu, registry.cu, one file per method
 bench/        bench_allreduce.cu: correctness + latency/bandwidth benchmark
 tests/        sim_allreduce.cpp + mock CUDA runtime (make simcheck)
-scripts/      run_experiments.sh, flops.py, kernel_share.py, summarize_runs.py, summarize_sweep.py, get_mnist.sh
+scripts/      run_experiments.sh, scaling.sh, flops.py, kernel_share.py, summarize_runs.py, summarize_sweep.py,
+              make_figures.py, get_mnist.sh
   kaggle/     check/ (quick check), profile/ (nsys kernel profile), final/ (final run), sweep/ (batch sweep)
 runs/         raw logs and CSVs (Kaggle 2× T4, RunPod 4× A100 SXM)
 ```
