@@ -20,6 +20,8 @@ Section 7 (scaling to 4 GPUs, NVLink vs PCIe) comes from one RunPod machine with
 5 epochs and 3 repeats per configuration:
 [`runs/runpod-a100-2026-11-23/`](runs/runpod-a100-2026-11-23/).
 
+Full report (PDF, Vietnamese): [`docs/report/bao-cao.pdf`](docs/report/bao-cao.pdf).
+
 ## Summary
 
 | Question | Answer |

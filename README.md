@@ -20,6 +20,8 @@ Mục 7 (mở rộng tới 4 GPU, NVLink so với PCIe) đo trên một máy Run
 5 epoch và lặp 3 lần mỗi cấu hình:
 [`runs/runpod-a100-2026-11-23/`](runs/runpod-a100-2026-11-23/).
 
+Báo cáo đầy đủ (PDF, tiếng Việt): [`docs/report/bao-cao.pdf`](docs/report/bao-cao.pdf).
+
 ## Tóm tắt
 
 | Câu hỏi | Trả lời |
