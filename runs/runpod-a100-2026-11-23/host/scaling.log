@@ -1,0 +1,847 @@
+=== mode host (AR_DISABLE_P2P=1) ===
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.0819        0.050       ok
+        8192       0.0819        0.100       ok
+       16384       0.0818        0.200       ok
+       32768       0.0873        0.375       ok
+       65536       0.0950        0.690       ok
+      131072       0.1044        1.255       ok
+      262144       0.1551        1.691       ok
+      524288       0.1851        2.833       ok
+     1048576       0.2894        3.623       ok
+     2097152       0.4041        5.190       ok
+     4194304       0.6592        6.363       ok
+     8388608       1.1748        7.141       ok
+    16777216       2.2301        7.523       ok
+    33554432       4.3614        7.693       ok
+    67108864       8.4192        7.971       ok
+   134217728      16.7736        8.002       ok
+   268435456      33.6538        7.976       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.1028        0.040       ok
+        8192       0.1030        0.080       ok
+       16384       0.1033        0.159       ok
+       32768       0.1137        0.288       ok
+       65536       0.1156        0.567       ok
+      131072       0.1282        1.023       ok
+      262144       0.1579        1.660       ok
+      524288       0.1835        2.857       ok
+     1048576       0.2375        4.416       ok
+     2097152       0.3457        6.066       ok
+     4194304       0.5415        7.745       ok
+     8388608       1.0222        8.206       ok
+    16777216       1.9152        8.760       ok
+    33554432       3.6497        9.194       ok
+    67108864       7.1897        9.334       ok
+   134217728      14.0140        9.577       ok
+   268435456      27.7582        9.670       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.0649        0.063       ok
+        8192       0.0655        0.125       ok
+       16384       0.0652        0.251       ok
+       32768       0.0726        0.451       ok
+       65536       0.0799        0.820       ok
+      131072       0.0945        1.387       ok
+      262144       0.1084        2.418       ok
+      524288       0.1266        4.140       ok
+     1048576       0.1855        5.654       ok
+     2097152       0.2681        7.823       ok
+     4194304       0.5133        8.171       ok
+     8388608       0.9962        8.420       ok
+    16777216       1.8423        9.107       ok
+    33554432       3.6352        9.230       ok
+    67108864       7.1322        9.409       ok
+   134217728      14.1006        9.519       ok
+   268435456      28.2425        9.505       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.1525        0.040       ok
+        8192       0.1541        0.080       ok
+       16384       0.1605        0.153       ok
+       32768       0.1687        0.291       ok
+       65536       0.1975        0.498       ok
+      131072       0.2228        0.883       ok
+      262144       0.2975        1.322       ok
+      524288       0.4329        1.817       ok
+     1048576       0.6897        2.280       ok
+     2097152       1.0514        2.992       ok
+     4194304       1.8460        3.408       ok
+     8388608       3.4552        3.642       ok
+    16777216       6.4744        3.887       ok
+    33554432      12.7617        3.944       ok
+    67108864      25.4085        3.962       ok
+   134217728      50.8000        3.963       ok
+   268435456     101.1579        3.980       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.4711        0.013       ok
+        8192       0.4683        0.026       ok
+       16384       0.4727        0.052       ok
+       32768       0.4725        0.104       ok
+       65536       0.4712        0.209       ok
+      131072       0.4723        0.416       ok
+      262144       0.4328        0.909       ok
+      524288       0.4407        1.784       ok
+     1048576       0.6834        2.302       ok
+     2097152       1.1469        2.743       ok
+     4194304       1.8825        3.342       ok
+     8388608       3.1312        4.019       ok
+    16777216       5.1144        4.921       ok
+    33554432       9.4327        5.336       ok
+    67108864      18.0944        5.563       ok
+   134217728      35.2691        5.708       ok
+   268435456      70.0088        5.751       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096            -            -       ok
+        8192            -            -       ok
+       16384            -            -       ok
+       32768            -            -       ok
+       65536            -            -       ok
+      131072            -            -       ok
+      262144            -            -       ok
+      524288            -            -       ok
+     1048576            -            -       ok
+     2097152            -            -       ok
+     4194304            -            -       ok
+     8388608            -            -       ok
+    16777216            -            -       ok
+    33554432            -            -       ok
+    67108864            -            -       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+check n=1: ok
+check n=7: ok
+check n=1000003: ok
+       bytes      time_ms   busbw_GB/s    check
+        4096       0.1803        0.034       ok
+        8192       0.1802        0.068       ok
+       16384       0.1791        0.137       ok
+       32768       0.1794        0.274       ok
+       65536       0.1815        0.542       ok
+      131072       0.1786        1.101       ok
+      262144       0.2161        1.820       ok
+      524288       0.4019        1.957       ok
+     1048576       0.7066        2.226       ok
+     2097152       1.2159        2.587       ok
+     4194304       1.9847        3.170       ok
+     8388608       3.6085        3.487       ok
+    16777216       6.4078        3.927       ok
+    33554432      12.8270        3.924       ok
+    67108864      24.9645        4.032       ok
+   134217728      50.2749        4.005       ok
+   268435456      99.9313        4.029       ok
+CORRECTNESS: all sizes passed
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.086 s
+epoch 2  loss 0.30288  time 0.083 s
+epoch 3  loss 0.25552  time 0.084 s
+epoch 4  loss 0.22493  time 0.083 s
+epoch 5  loss 0.20050  time 0.082 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9468   exposed comm 1.5% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.193 s
+epoch 2  loss 0.30289  time 0.154 s
+epoch 3  loss 0.25552  time 0.144 s
+epoch 4  loss 0.22493  time 0.144 s
+epoch 5  loss 0.20050  time 0.146 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 61.5% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.193 s
+epoch 2  loss 0.30289  time 0.151 s
+epoch 3  loss 0.25552  time 0.151 s
+epoch 4  loss 0.22493  time 0.162 s
+epoch 5  loss 0.20050  time 0.142 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 64.2% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.137 s
+epoch 2  loss 0.30289  time 0.147 s
+epoch 3  loss 0.25552  time 0.122 s
+epoch 4  loss 0.22493  time 0.114 s
+epoch 5  loss 0.20050  time 0.114 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 53.2% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=tree k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=64
+epoch 1  loss 0.55714  time 0.296 s
+epoch 2  loss 0.30289  time 0.257 s
+epoch 3  loss 0.25552  time 0.259 s
+epoch 4  loss 0.22493  time 0.257 s
+epoch 5  loss 0.20050  time 0.258 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9469   exposed comm 84.7% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=ring k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=64
+epoch 1  loss 0.55714  time 0.588 s
+epoch 2  loss 0.30289  time 0.450 s
+epoch 3  loss 0.25552  time 0.447 s
+epoch 4  loss 0.22493  time 0.435 s
+epoch 5  loss 0.20050  time 0.437 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9469   exposed comm 89.4% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=rd k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=64
+epoch 1  loss 0.55714  time 0.341 s
+epoch 2  loss 0.30289  time 0.331 s
+epoch 3  loss 0.25552  time 0.328 s
+epoch 4  loss 0.22493  time 0.324 s
+epoch 5  loss 0.20050  time 0.314 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9468   exposed comm 85.9% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.083 s
+epoch 2  loss 0.30288  time 0.082 s
+epoch 3  loss 0.25552  time 0.082 s
+epoch 4  loss 0.22493  time 0.082 s
+epoch 5  loss 0.20050  time 0.082 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9468   exposed comm 1.5% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.188 s
+epoch 2  loss 0.30289  time 0.149 s
+epoch 3  loss 0.25552  time 0.143 s
+epoch 4  loss 0.22493  time 0.144 s
+epoch 5  loss 0.20050  time 0.144 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 63.5% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.143 s
+epoch 2  loss 0.30289  time 0.158 s
+epoch 3  loss 0.25552  time 0.130 s
+epoch 4  loss 0.22493  time 0.130 s
+epoch 5  loss 0.20050  time 0.130 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 57.1% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.162 s
+epoch 2  loss 0.30289  time 0.117 s
+epoch 3  loss 0.25552  time 0.114 s
+epoch 4  loss 0.22493  time 0.113 s
+epoch 5  loss 0.20050  time 0.113 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 54.2% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=tree k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=64
+epoch 1  loss 0.55714  time 0.433 s
+epoch 2  loss 0.30289  time 0.257 s
+epoch 3  loss 0.25552  time 0.247 s
+epoch 4  loss 0.22493  time 0.238 s
+epoch 5  loss 0.20050  time 0.277 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9469   exposed comm 83.5% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=ring k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=64
+epoch 1  loss 0.55714  time 0.294 s
+epoch 2  loss 0.30289  time 0.268 s
+epoch 3  loss 0.25552  time 0.289 s
+epoch 4  loss 0.22493  time 0.267 s
+epoch 5  loss 0.20050  time 0.268 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9469   exposed comm 84.5% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=rd k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=64
+epoch 1  loss 0.55714  time 0.341 s
+epoch 2  loss 0.30289  time 0.320 s
+epoch 3  loss 0.25552  time 0.314 s
+epoch 4  loss 0.22493  time 0.329 s
+epoch 5  loss 0.20050  time 0.312 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9468   exposed comm 86.0% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=256
+epoch 1  loss 0.55714  time 0.083 s
+epoch 2  loss 0.30288  time 0.081 s
+epoch 3  loss 0.25552  time 0.082 s
+epoch 4  loss 0.22493  time 0.082 s
+epoch 5  loss 0.20050  time 0.082 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9468   exposed comm 1.5% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.197 s
+epoch 2  loss 0.30289  time 0.148 s
+epoch 3  loss 0.25552  time 0.146 s
+epoch 4  loss 0.22493  time 0.145 s
+epoch 5  loss 0.20050  time 0.142 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 63.9% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.176 s
+epoch 2  loss 0.30289  time 0.133 s
+epoch 3  loss 0.25552  time 0.129 s
+epoch 4  loss 0.22493  time 0.130 s
+epoch 5  loss 0.20050  time 0.130 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 58.2% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=128
+epoch 1  loss 0.55714  time 0.130 s
+epoch 2  loss 0.30289  time 0.139 s
+epoch 3  loss 0.25552  time 0.123 s
+epoch 4  loss 0.22493  time 0.114 s
+epoch 5  loss 0.20050  time 0.114 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9470   exposed comm 52.9% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=tree k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=64
+epoch 1  loss 0.55714  time 0.367 s
+epoch 2  loss 0.30289  time 0.269 s
+epoch 3  loss 0.25552  time 0.280 s
+epoch 4  loss 0.22493  time 0.245 s
+epoch 5  loss 0.20050  time 0.274 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9469   exposed comm 82.4% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=ring k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=64
+epoch 1  loss 0.55714  time 0.604 s
+epoch 2  loss 0.30289  time 0.438 s
+epoch 3  loss 0.25552  time 0.436 s
+epoch 4  loss 0.22493  time 0.448 s
+epoch 5  loss 0.20050  time 0.452 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9469   exposed comm 89.1% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=rd k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=64
+epoch 1  loss 0.55714  time 0.694 s
+epoch 2  loss 0.30289  time 0.501 s
+epoch 3  loss 0.25552  time 0.479 s
+epoch 4  loss 0.22493  time 0.505 s
+epoch 5  loss 0.20050  time 0.443 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.9468   exposed comm 88.1% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 1.72104  time 0.108 s
+epoch 2  loss 0.99889  time 0.070 s
+epoch 3  loss 0.72949  time 0.069 s
+epoch 4  loss 0.60661  time 0.069 s
+epoch 5  loss 0.53684  time 0.063 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 0.1% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.087 s
+epoch 2  loss 0.99889  time 0.056 s
+epoch 3  loss 0.72949  time 0.056 s
+epoch 4  loss 0.60661  time 0.056 s
+epoch 5  loss 0.53684  time 0.054 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 15.9% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.087 s
+epoch 2  loss 0.99889  time 0.053 s
+epoch 3  loss 0.72949  time 0.051 s
+epoch 4  loss 0.60661  time 0.053 s
+epoch 5  loss 0.53684  time 0.054 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 13.4% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.056 s
+epoch 2  loss 0.99889  time 0.054 s
+epoch 3  loss 0.72949  time 0.064 s
+epoch 4  loss 0.60661  time 0.072 s
+epoch 5  loss 0.53684  time 0.050 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 11.1% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=tree k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.72103  time 0.170 s
+epoch 2  loss 0.99889  time 0.056 s
+epoch 3  loss 0.72949  time 0.054 s
+epoch 4  loss 0.60661  time 0.059 s
+epoch 5  loss 0.53684  time 0.053 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 52.9% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=ring k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.72103  time 0.086 s
+epoch 2  loss 0.99889  time 0.055 s
+epoch 3  loss 0.72949  time 0.055 s
+epoch 4  loss 0.60661  time 0.055 s
+epoch 5  loss 0.53684  time 0.054 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 49.8% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=rd k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.72103  time 0.074 s
+epoch 2  loss 0.99889  time 0.057 s
+epoch 3  loss 0.72949  time 0.056 s
+epoch 4  loss 0.60661  time 0.056 s
+epoch 5  loss 0.53684  time 0.056 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 53.7% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 1.72104  time 0.069 s
+epoch 2  loss 0.99889  time 0.066 s
+epoch 3  loss 0.72949  time 0.063 s
+epoch 4  loss 0.60661  time 0.062 s
+epoch 5  loss 0.53684  time 0.063 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 0.1% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.174 s
+epoch 2  loss 0.99889  time 0.069 s
+epoch 3  loss 0.72949  time 0.060 s
+epoch 4  loss 0.60661  time 0.060 s
+epoch 5  loss 0.53684  time 0.059 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 18.9% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.087 s
+epoch 2  loss 0.99889  time 0.055 s
+epoch 3  loss 0.72948  time 0.055 s
+epoch 4  loss 0.60661  time 0.055 s
+epoch 5  loss 0.53684  time 0.055 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 15.7% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.088 s
+epoch 2  loss 0.99889  time 0.054 s
+epoch 3  loss 0.72949  time 0.054 s
+epoch 4  loss 0.60661  time 0.052 s
+epoch 5  loss 0.53684  time 0.051 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 12.9% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=tree k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.72103  time 0.087 s
+epoch 2  loss 0.99889  time 0.052 s
+epoch 3  loss 0.72949  time 0.052 s
+epoch 4  loss 0.60661  time 0.052 s
+epoch 5  loss 0.53684  time 0.052 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 46.3% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=ring k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.72103  time 0.073 s
+epoch 2  loss 0.99889  time 0.055 s
+epoch 3  loss 0.72949  time 0.055 s
+epoch 4  loss 0.60661  time 0.054 s
+epoch 5  loss 0.53684  time 0.053 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 49.3% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=rd k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.72103  time 0.075 s
+epoch 2  loss 0.99889  time 0.057 s
+epoch 3  loss 0.72949  time 0.057 s
+epoch 4  loss 0.60661  time 0.057 s
+epoch 5  loss 0.53684  time 0.057 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 53.5% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1
+method=host_ref k=1 overlap=0 H=512 params=407050 (1.63 MB) local_batch=4096
+epoch 1  loss 1.72104  time 0.070 s
+epoch 2  loss 0.99889  time 0.070 s
+epoch 3  loss 0.72949  time 0.070 s
+epoch 4  loss 0.60660  time 0.068 s
+epoch 5  loss 0.53684  time 0.060 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 0.1% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=tree k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.057 s
+epoch 2  loss 0.99889  time 0.056 s
+epoch 3  loss 0.72949  time 0.063 s
+epoch 4  loss 0.60661  time 0.072 s
+epoch 5  loss 0.53684  time 0.053 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 16.2% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=ring k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.059 s
+epoch 2  loss 0.99889  time 0.055 s
+epoch 3  loss 0.72949  time 0.080 s
+epoch 4  loss 0.60661  time 0.057 s
+epoch 5  loss 0.53684  time 0.054 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 14.0% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0
+ 0 1
+method=rd k=2 overlap=0 H=512 params=407050 (1.63 MB) local_batch=2048
+epoch 1  loss 1.72103  time 0.088 s
+epoch 2  loss 0.99889  time 0.055 s
+epoch 3  loss 0.72949  time 0.054 s
+epoch 4  loss 0.60661  time 0.055 s
+epoch 5  loss 0.53684  time 0.051 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 12.7% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=tree k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.72103  time 0.085 s
+epoch 2  loss 0.99889  time 0.052 s
+epoch 3  loss 0.72949  time 0.051 s
+epoch 4  loss 0.60661  time 0.049 s
+epoch 5  loss 0.53684  time 0.050 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 45.7% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=ring k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.72103  time 0.076 s
+epoch 2  loss 0.99889  time 0.055 s
+epoch 3  loss 0.72949  time 0.055 s
+epoch 4  loss 0.60661  time 0.053 s
+epoch 5  loss 0.53684  time 0.061 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 47.7% of step time
+AR_DISABLE_P2P=1: peer access off, copies go through host
+P2P matrix (row i can access column j):
+ 1 0 0 0
+ 0 1 0 0
+ 0 0 1 0
+ 0 0 0 1
+method=rd k=4 overlap=0 H=512 params=407050 (1.63 MB) local_batch=1024
+epoch 1  loss 1.72103  time 0.088 s
+epoch 2  loss 0.99889  time 0.056 s
+epoch 3  loss 0.72949  time 0.056 s
+epoch 4  loss 0.60661  time 0.056 s
+epoch 5  loss 0.53684  time 0.055 s
+max parameter difference between replicas: 0 (OK)
+test accuracy 0.8793   exposed comm 52.0% of step time

@@ -18,5 +18,4 @@ GPU3    NV12    NV12    NV12     X      64-127          1
 ```
 
 P2P matrix at k=4: all 1 in `p2p`, identity in `host`.
-Raw logs (scaling.log, clocks.csv, topo.txt, run.out) are kept on the author's machine;
-the CSVs and summaries here are copied from them.
+Raw logs: topo.txt, clocks.csv, run.out, and p2p/ and host/ scaling.log and scaling.csv.
