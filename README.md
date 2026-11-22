@@ -8,18 +8,17 @@ methods** for averaging gradients. The paper only analysed this cost
 
 > Rename the folder/repo to `HPC_20261B_Group<N>_DataParallelSGD_CUDA` with your group number.
 
-## Who implements what
+## Methods
 
-| File | Owner | Method |
+| File | Status | Method |
 |---|---|---|
-| `allreduce/host_ref.cu` | given | Reference: copy to CPU, average, copy back. Used to validate the others |
-| `allreduce/tree.cu` | member 1 | The paper's method: reduce to GPU 0, then broadcast |
-| `allreduce/ring.cu` | member 2 | Ring: reduce-scatter + allgather, chunked pipelining |
-| `allreduce/rd.cu` | member 3 | Recursive doubling / halving |
-| `cuda/train_dp.cu` (`--overlap`) | member 4 | Overlap gradient communication with backprop |
+| `allreduce/host_ref.cu` | reference, checked on 2× T4 | Reference: copy to CPU, average, copy back. Used to validate the others |
+| `allreduce/tree.cu` | not implemented yet (`ar_todo`) | The paper's method: reduce to GPU 0, then broadcast |
+| `allreduce/ring.cu` | not implemented yet (`ar_todo`) | Ring: reduce-scatter + allgather, chunked pipelining |
+| `allreduce/rd.cu` | not implemented yet (`ar_todo`) | Recursive doubling / halving |
+| `cuda/train_dp.cu` (`--overlap`) | implemented | Overlap gradient communication with backprop |
 
-Everything else is the **shared base**. Change it only by agreement with the group,
-because changes affect every method's numbers.
+Everything else is the **shared base**: changing it changes every method's numbers.
 
 ## The interface (read `allreduce/allreduce.h`)
 

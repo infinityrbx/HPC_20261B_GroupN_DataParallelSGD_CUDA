@@ -1,5 +1,5 @@
 /*
- * rd.cu - MEMBER 3: recursive doubling (and optionally recursive halving).
+ * rd.cu - recursive doubling (and optionally recursive halving).
  *
  * Recursive doubling (k a power of two; handle other k by folding the extra GPUs
  * into partners first):

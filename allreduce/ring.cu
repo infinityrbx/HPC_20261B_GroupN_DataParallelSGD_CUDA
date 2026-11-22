@@ -1,5 +1,5 @@
 /*
- * ring.cu - MEMBER 2: ring allreduce = reduce-scatter + allgather.
+ * ring.cu - ring allreduce = reduce-scatter + allgather.
  *
  * Split the n floats into k chunks (handle n % k != 0: last chunk is shorter).
  *   Reduce-scatter, step s = 0..k-2:

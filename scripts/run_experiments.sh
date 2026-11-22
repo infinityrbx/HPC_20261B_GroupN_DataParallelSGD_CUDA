@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the FINAL comparison with the fixed settings. Same machine for everyone.
+# Run the FINAL comparison with the fixed settings. Use the same machine for every method.
 #   bash scripts/run_experiments.sh 2 "tree ring rd"      # k=2, three methods
 # Results are appended to results/allreduce.csv and results/training.csv.
 set -euo pipefail

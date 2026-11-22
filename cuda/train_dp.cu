@@ -10,10 +10,10 @@
  *   ./train_dp --gpus 2 --method ring --overlap   # per-layer buckets, overlapped
  *   ./train_dp --gpus 1                           # single-GPU baseline
  *
- * Overlap mode (member 4): layer-2 gradients (W2,b2) are ready first in backward.
+ * Overlap mode: layer-2 gradients (W2,b2) are ready first in backward.
  * Their allreduce is launched on the comm stream while layer-1 backward still runs
  * on the compute stream; then layer-1 gradients (W1,b1) are reduced. Improving this
- * (more/smaller buckets, chunking W1, ...) is member 4's part of the project.
+ * (more/smaller buckets, chunking W1, ...) is future work.
  *
  * Output: one CSV row: method,k,msg_bytes,-1,-1,epoch_s,comm_pct,test_acc
  *   comm_pct = exposed communication time (end of backward -> end of allreduce,

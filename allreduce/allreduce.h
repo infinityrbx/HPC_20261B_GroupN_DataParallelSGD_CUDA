@@ -3,7 +3,7 @@
  *
  *   void allreduce_<name>(float** grads, size_t n, int k, cudaStream_t* streams);
  *
- * Contract (read carefully; the comparison is only fair if everyone follows it):
+ * Contract (read carefully; the comparison is only fair if every method follows it):
  *  1. grads[i] is a device pointer on GPU i holding n floats (i = 0..k-1).
  *  2. When all streams[i] have finished, EVERY grads[i] must hold the element-wise
  *     AVERAGE (sum / k) of the k input buffers. The result is written in place.
@@ -34,12 +34,12 @@
 
 typedef void (*allreduce_fn)(float **grads, size_t n, int k, cudaStream_t *streams);
 
-/* ---- Methods (one per team member) ---------------------------------------- */
+/* ---- Methods ------------------------------------------------------------- */
 void allreduce_host_ref(float **grads, size_t n, int k, cudaStream_t *streams); /* given: reference */
-void allreduce_tree    (float **grads, size_t n, int k, cudaStream_t *streams); /* member 1 */
-void allreduce_ring    (float **grads, size_t n, int k, cudaStream_t *streams); /* member 2 */
-void allreduce_rd      (float **grads, size_t n, int k, cudaStream_t *streams); /* member 3 */
-/* Member 4 (overlap) uses the training loop's --overlap mode, see cuda/train_dp.cu */
+void allreduce_tree    (float **grads, size_t n, int k, cudaStream_t *streams); /* paper's method */
+void allreduce_ring    (float **grads, size_t n, int k, cudaStream_t *streams); /* ring */
+void allreduce_rd      (float **grads, size_t n, int k, cudaStream_t *streams); /* recursive doubling */
+/* Overlap is the training loop's --overlap mode, see cuda/train_dp.cu */
 
 /* ---- Registry / dispatch --------------------------------------------------- */
 /* Select a method by name ("host_ref", "tree", "ring", "rd"). Returns 0 if ok. */

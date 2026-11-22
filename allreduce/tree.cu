@@ -1,5 +1,5 @@
 /*
- * tree.cu - MEMBER 1: the paper's method (Hegde & Usmani, Sec. 5):
+ * tree.cu - the paper's method (Hegde & Usmani, Sec. 5):
  *           reduce all gradients to GPU 0 ("driver"), average, broadcast back.
  *
  * Suggested steps:
