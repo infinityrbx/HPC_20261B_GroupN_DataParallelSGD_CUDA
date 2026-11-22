@@ -79,6 +79,19 @@ method,k,msg_bytes,time_ms,busbw_GBs,epoch_s,comm_pct,test_acc
 nccl-tests). `comm_pct` = exposed communication (end of backward to end of
 allreduce on GPU 0) as a % of step time.
 
+## Is matrix multiplication the bottleneck?
+
+```bash
+python3 scripts/flops.py --hidden 512 --step-ms 0.855   # FLOP count per step, matmul vs the rest
+kaggle kernels push -p scripts/kaggle_profile --accelerator NvidiaTeslaT4   # kernel-time profile
+```
+`flops.py` counts the five `gpu_matmul` calls per step against every other kernel: at H = 512 and
+batch 256, matmul is 418.9 of 420.3 MFLOP per step (99.7 %). It also prints one 3×3 conv layer
+written as im2col + matmul, to show that convolutions reduce to the same operation.
+`scripts/kaggle_profile/` profiles one epoch on 1 GPU at H = 512, 1024 and 2048 with nsys (or
+ncu if nsys is missing) and prints each kernel's share of GPU time; `scripts/kernel_share.py`
+does the summing and writes `kernel_share.csv`.
+
 ## Layout
 
 ```
