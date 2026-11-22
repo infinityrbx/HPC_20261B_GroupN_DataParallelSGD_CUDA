@@ -53,18 +53,25 @@ make ARCH=sm_75    # everything; sm_75 = T4 (Kaggle/Colab), sm_80 = A100
 ./bin/train_dp --gpus 1                         # single GPU
 ./bin/train_dp --gpus 2 --method ring           # data-parallel, plain
 ./bin/train_dp --gpus 2 --method ring --overlap # data-parallel, overlapped
+./bin/train_dp --gpus 2 --method ring --per-layer  # per-layer buckets, no overlap
+./bin/train_dp --gpus 2 --method ring --phase-csv results/phases.csv  # + time per phase
 ./bin/bench_allreduce --method ring --gpus 2    # raw allreduce, 4 KB .. 512 MB
 ./bin/bench_allreduce --method ring --gpus 2 --check-only
-bash scripts/run_experiments.sh 2 "tree ring rd"   # the final comparison
+./bin/bench_p2p --csv results/p2p.csv           # alpha, beta (copy) and gamma (ar_add)
+bash scripts/run_experiments.sh 2 "tree ring rd"   # the final comparison + report
+python3 scripts/analyze.py results              # report only (results/report.md, fig_*.png)
 ```
 
 ## Correctness checks (every method must pass all three)
 
 1. `bench_allreduce --check-only`: result equals the exact average on every
-   element for many sizes, including odd n (1, 7, 1000003).
-2. `train_dp` prints the max parameter difference between replicas. It must be ~0.
+   element for many sizes, including odd n (1, 7, 1000003). Exit 3 on failure.
+2. `train_dp` compares the replicas at the end. Above 1e-4 (or NaN) it writes no
+   results and exits with status 4, so `run_experiments.sh` stops.
 3. Loss curves (`--loss-log`) for k GPUs match the 1-GPU and sequential curves
-   (same global batch and seed) up to float rounding.
+   (same global batch and seed) up to float rounding. Checked automatically:
+   `python3 scripts/analyze.py --check-loss results/loss_gpu1.csv results/loss_ring_k2.csv`
+   (exit 1 if any curve differs by more than 1e-4).
 
 ## Output (same CSV columns everywhere)
 
@@ -73,7 +80,38 @@ method,k,msg_bytes,time_ms,busbw_GBs,epoch_s,comm_pct,test_acc
 ```
 `-1` means "not applicable". `busbw = bytes/time × 2(k−1)/k` (same definition as
 nccl-tests). `comm_pct` = exposed communication (end of backward to end of
-allreduce on GPU 0) as a % of step time.
+allreduce on GPU 0) as a % of step time. In `bench_p2p` rows (`p2p`, `add`) the
+`busbw_GBs` column is the plain bandwidth bytes/time.
+
+Two extra files (not the shared format):
+* `--phase-csv` (train_dp): mean ms per step of `data, h2d, fwd, bwd, comm, upd`, the
+  step time and the compute imbalance. Each phase is timed with cudaEvents on every GPU
+  and the **maximum over GPUs** is kept, because a synchronous step ends with its slowest GPU.
+* `--loss-log`: `epoch,loss` per epoch.
+
+## Analysis (`scripts/analyze.py`)
+
+Needs only Python 3 (matplotlib for the figures). From whatever CSVs exist in `results/`:
+
+* **Machine parameters**: fits `t = α + βn` to the `bench_p2p` ping-pong (GPU→GPU copy)
+  and `t = α_add + γn` to the `ar_add` kernel. The fit minimizes relative error so both
+  small (latency) and large (bandwidth) messages count.
+* **Model vs measured**: predicts every allreduce size with the cost models below and
+  reports the % error per size. Where measured time is well above the model, look for
+  contention (several copies sharing one PCIe link, or staging through host memory when
+  P2P is off): that gap is a finding for the report.
+
+  | method | model (n bytes, k GPUs) |
+  |---|---|
+  | tree (flat) | 2(k−1)(α + nβ) + (k−1)(α_add + nγ) |
+  | ring | 2(k−1)(α + nβ/k) + (k−1)(α_add + nγ/k) |
+  | rd | ⌈log₂k⌉(α + nβ + α_add + nγ), +2 rounds if k is not a power of 2 |
+
+* **Training**: mean ± 95% CI (Student t) over `REPEATS` runs of epoch time, speedup and
+  efficiency vs 1 GPU, exposed comm %, accuracy.
+* **Phases**: where the step time goes, per method (stacked bars).
+* **Loss check**: every `loss_*.csv` against the 1-GPU curve (seq against 1 GPU).
+* Output: `results/report.md` and `results/fig_{allreduce,alpha_beta,phases,speedup,loss}.png`.
 
 ## Layout
 
@@ -83,7 +121,8 @@ seq/        mlp_seq.c: sequential C MLP (correctness reference)
 cuda/       kernels.cu (tiled matmul, softmax, relu, ...), train_dp.cu (training loop)
 allreduce/  allreduce.h (interface), common.cu (helpers), registry.cu, one file per method
 bench/      bench_allreduce.cu: correctness + latency/bandwidth benchmark
-scripts/    get_mnist.sh, run_experiments.sh
+            bench_p2p.cu: GPU-to-GPU ping-pong and ar_add timing (alpha, beta, gamma)
+scripts/    get_mnist.sh, run_experiments.sh, analyze.py (report + figures)
 ```
 
 ## Status

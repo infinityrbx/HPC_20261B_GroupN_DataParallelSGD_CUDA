@@ -30,8 +30,8 @@ void init_params(float *p, const ParamLayout *L, uint32_t seed) {
 static void usage(const char *prog) {
     fprintf(stderr,
         "usage: %s [--hidden H] [--epochs E] [--batch B] [--lr LR] [--seed S]\n"
-        "          [--gpus K] [--method NAME] [--overlap] [--data DIR]\n"
-        "          [--csv FILE] [--loss-log FILE]\n"
+        "          [--gpus K] [--method NAME] [--overlap | --per-layer] [--data DIR]\n"
+        "          [--csv FILE] [--loss-log FILE] [--phase-csv FILE]\n"
         "Defaults come from common/config.h. Use the defaults for final results.\n", prog);
     exit(1);
 }
@@ -40,6 +40,7 @@ void parse_options(int argc, char **argv, Options *o) {
     o->hidden = CFG_HIDDEN; o->epochs = CFG_EPOCHS; o->batch = CFG_GLOBAL_BATCH;
     o->lr = CFG_LR; o->seed = CFG_SEED; o->gpus = 1; o->method = "host_ref";
     o->data_dir = CFG_DATA_DIR; o->csv = NULL; o->loss_log = NULL; o->overlap = 0;
+    o->per_layer = 0; o->phase_csv = NULL;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         int has = i + 1 < argc;
@@ -53,7 +54,13 @@ void parse_options(int argc, char **argv, Options *o) {
         else if (!strcmp(a, "--data")     && has) o->data_dir = argv[++i];
         else if (!strcmp(a, "--csv")      && has) o->csv = argv[++i];
         else if (!strcmp(a, "--loss-log") && has) o->loss_log = argv[++i];
+        else if (!strcmp(a, "--phase-csv") && has) o->phase_csv = argv[++i];
         else if (!strcmp(a, "--overlap"))         o->overlap = 1;
+        else if (!strcmp(a, "--per-layer"))       o->per_layer = 1;
         else usage(argv[0]);
+    }
+    if (o->overlap && o->per_layer) {
+        fprintf(stderr, "--overlap already uses per-layer buckets; pass only one of --overlap / --per-layer\n");
+        exit(1);
     }
 }

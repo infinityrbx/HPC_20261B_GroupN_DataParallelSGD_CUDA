@@ -8,6 +8,8 @@
  *
  *   ./train_dp --gpus 2 --method ring             # one allreduce per step
  *   ./train_dp --gpus 2 --method ring --overlap   # per-layer buckets, overlapped
+ *   ./train_dp --gpus 2 --method ring --per-layer # per-layer buckets, NOT overlapped
+ *                                                 # (separates "bucketing" from "overlap")
  *   ./train_dp --gpus 1                           # single-GPU baseline
  *
  * Overlap mode (member 4): layer-2 gradients (W2,b2) are ready first in backward.
@@ -18,6 +20,24 @@
  * Output: one CSV row: method,k,msg_bytes,-1,-1,epoch_s,comm_pct,test_acc
  *   comm_pct = exposed communication time (end of backward -> end of allreduce,
  *              measured on GPU 0 with cudaEvents) / step time * 100
+ *
+ * --phase-csv FILE appends one row per run with the mean time per step of each
+ * phase (idea borrowed from pdl-bench). Each phase is timed with cudaEvents on
+ * every GPU and the MAXIMUM over GPUs is kept for each step, because a
+ * synchronous step ends with its slowest GPU:
+ *   data_ms   host: gather the global batch into pinned memory
+ *   h2d_ms    copy of the local shard to the GPU
+ *   fwd_ms    forward + loss
+ *   bwd_ms    backward (both layers; in --overlap mode the layer-2 allreduce
+ *             runs during this window and is therefore hidden here)
+ *   comm_ms   exposed communication: end of backward -> end of allreduce
+ *   upd_ms    SGD update
+ *   step_ms   host wall time of the whole step (without data_ms)
+ *   imbalance max/mean over GPUs of (fwd + bwd), averaged over steps (1 = perfect)
+ *
+ * Correctness: at the end the replicas are compared. A mismatch above 1e-4 makes
+ * the program exit with status 4, so scripts stop instead of reporting numbers
+ * from a wrong method.
  */
 #include "../allreduce/allreduce.h"
 #include "../common/config.h"
@@ -40,6 +60,7 @@ typedef struct {
     float *loss; int *correct;        /* device accumulators */
     cudaStream_t comp, comm;
     cudaEvent_t ev_l2_ready, ev_bwd_done, ev_comm_done;
+    cudaEvent_t ev_start, ev_h2d, ev_fwd, ev_upd;   /* phase timing */
 } Replica;
 
 static void replica_init(Replica *r, int dev, int B, const ParamLayout *L, const float *h_init) {
@@ -64,6 +85,33 @@ static void replica_init(Replica *r, int dev, int B, const ParamLayout *L, const
     CUDA_CHECK(cudaEventCreateWithFlags(&r->ev_l2_ready, cudaEventDisableTiming));
     CUDA_CHECK(cudaEventCreate(&r->ev_bwd_done));
     CUDA_CHECK(cudaEventCreate(&r->ev_comm_done));
+    CUDA_CHECK(cudaEventCreate(&r->ev_start));
+    CUDA_CHECK(cudaEventCreate(&r->ev_h2d));
+    CUDA_CHECK(cudaEventCreate(&r->ev_fwd));
+    CUDA_CHECK(cudaEventCreate(&r->ev_upd));
+}
+
+static float ev_ms(cudaEvent_t a, cudaEvent_t b) {
+    float t = 0;
+    CUDA_CHECK(cudaEventElapsedTime(&t, a, b));
+    return t > 0 ? t : 0;
+}
+
+/* Per-phase totals over all steps (each step contributes the max over GPUs). */
+typedef struct { double data, h2d, fwd, bwd, comm, upd, step, imbalance; long steps; } Phases;
+
+static void phase_csv_write(const char *path, const char *method, int k, unsigned seed, const Phases *p) {
+    if (!path || p->steps == 0) return;
+    FILE *t = fopen(path, "r");
+    int need_header = 1;
+    if (t) { need_header = fgetc(t) == EOF; fclose(t); }
+    FILE *f = fopen(path, "a");
+    if (!f) { fprintf(stderr, "cannot open %s\n", path); return; }
+    if (need_header) fputs("method,k,seed,steps,data_ms,h2d_ms,fwd_ms,bwd_ms,comm_ms,upd_ms,step_ms,imbalance\n", f);
+    double n = (double)p->steps;
+    fprintf(f, "%s,%d,%u,%ld,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.4f\n", method, k, seed, p->steps,
+            p->data / n, p->h2d / n, p->fwd / n, p->bwd / n, p->comm / n, p->upd / n, p->step / n, p->imbalance / n);
+    fclose(f);
 }
 
 /* Forward + loss for `rows` samples already in r->X / r->Y. */
@@ -135,9 +183,11 @@ int main(int argc, char **argv) {
 
     int steps = train.n / o.batch;
     double total_ms = 0, comm_ms_total = 0, step_ms_total = 0;
+    Phases ph;
+    memset(&ph, 0, sizeof ph);
 
-    fprintf(stderr, "method=%s k=%d overlap=%d H=%d params=%zu (%.2f MB) local_batch=%d\n",
-            allreduce_selected_name(), k, o.overlap, o.hidden, L.total, L.total * 4 / 1e6, Bl);
+    fprintf(stderr, "method=%s k=%d overlap=%d per_layer=%d H=%d params=%zu (%.2f MB) local_batch=%d\n",
+            allreduce_selected_name(), k, o.overlap, o.per_layer, o.hidden, L.total, L.total * 4 / 1e6, Bl);
 
     for (int ep = 0; ep < o.epochs; ep++) {
         shuffle_indices(idx, train.n, &rng);
@@ -148,18 +198,23 @@ int main(int argc, char **argv) {
         double t_ep = now_ms();
 
         for (int s = 0; s < steps; s++) {
+            double t_data = now_ms();
             gather_batch(&train, idx, s * o.batch, o.batch, hX, hY);
             double t_step = now_ms();
+            ph.data += t_step - t_data;
 
             /* Phase A: copy shard, forward, layer-2 backward on every GPU. */
             for (int i = 0; i < k; i++) {
                 Replica *r = &R[i];
                 CUDA_CHECK(cudaSetDevice(i));
+                CUDA_CHECK(cudaEventRecord(r->ev_start, r->comp));
                 CUDA_CHECK(cudaMemcpyAsync(r->X, hX + (size_t)i * Bl * CFG_INPUT,
                                            (size_t)Bl * CFG_INPUT * sizeof(float), cudaMemcpyHostToDevice, r->comp));
                 CUDA_CHECK(cudaMemcpyAsync(r->Y, hY + (size_t)i * Bl * CFG_CLASSES,
                                            (size_t)Bl * CFG_CLASSES * sizeof(float), cudaMemcpyHostToDevice, r->comp));
+                CUDA_CHECK(cudaEventRecord(r->ev_h2d, r->comp));
                 forward(r, &L, Bl, 1);
+                CUDA_CHECK(cudaEventRecord(r->ev_fwd, r->comp));
                 backward_l2(r, &L);
                 CUDA_CHECK(cudaEventRecord(r->ev_l2_ready, r->comp));
             }
@@ -176,7 +231,11 @@ int main(int argc, char **argv) {
             }
             for (int i = 0; i < k; i++) { CUDA_CHECK(cudaSetDevice(i)); CUDA_CHECK(cudaStreamWaitEvent(R[i].comm, R[i].ev_bwd_done, 0)); }
             if (o.overlap) allreduce(grads_l1, n_l1, k, comm);
-            else           allreduce(grads_all, L.total, k, comm);
+            else if (o.per_layer) {                           /* same buckets, no overlap */
+                allreduce(grads_l2, n_l2, k, comm);
+                allreduce(grads_l1, n_l1, k, comm);
+            }
+            else allreduce(grads_all, L.total, k, comm);
 
             /* Phase C: update after communication finished. */
             for (int i = 0; i < k; i++) {
@@ -185,14 +244,37 @@ int main(int argc, char **argv) {
                 CUDA_CHECK(cudaEventRecord(r->ev_comm_done, r->comm));
                 CUDA_CHECK(cudaStreamWaitEvent(r->comp, r->ev_comm_done, 0));
                 gpu_sgd(r->p, r->g, o.lr, L.total, r->comp);
+                CUDA_CHECK(cudaEventRecord(r->ev_upd, r->comp));
             }
             for (int i = 0; i < k; i++) { CUDA_CHECK(cudaSetDevice(i)); CUDA_CHECK(cudaStreamSynchronize(R[i].comp)); }
+            double step_ms = now_ms() - t_step;
 
             float exposed = 0;
             CUDA_CHECK(cudaSetDevice(0));
             CUDA_CHECK(cudaEventElapsedTime(&exposed, R[0].ev_bwd_done, R[0].ev_comm_done));
             comm_ms_total += exposed > 0 ? exposed : 0;
-            step_ms_total += now_ms() - t_step;
+            step_ms_total += step_ms;
+
+            /* Phase breakdown: max over GPUs per phase, plus compute imbalance. */
+            float m_h2d = 0, m_fwd = 0, m_bwd = 0, m_comm = 0, m_upd = 0, c_max = 0, c_sum = 0;
+            for (int i = 0; i < k; i++) {
+                Replica *r = &R[i];
+                CUDA_CHECK(cudaSetDevice(i));
+                float h2d = ev_ms(r->ev_start, r->ev_h2d), fwd = ev_ms(r->ev_h2d, r->ev_fwd);
+                float bwd = ev_ms(r->ev_fwd, r->ev_bwd_done), cm = ev_ms(r->ev_bwd_done, r->ev_comm_done);
+                float upd = ev_ms(r->ev_comm_done, r->ev_upd);
+                if (h2d > m_h2d) m_h2d = h2d;
+                if (fwd > m_fwd) m_fwd = fwd;
+                if (bwd > m_bwd) m_bwd = bwd;
+                if (cm  > m_comm) m_comm = cm;
+                if (upd > m_upd) m_upd = upd;
+                if (fwd + bwd > c_max) c_max = fwd + bwd;
+                c_sum += fwd + bwd;
+            }
+            ph.h2d += m_h2d; ph.fwd += m_fwd; ph.bwd += m_bwd; ph.comm += m_comm; ph.upd += m_upd;
+            ph.step += step_ms;
+            ph.imbalance += c_sum > 0 ? c_max / (c_sum / k) : 1.0;
+            ph.steps++;
         }
         double ms = now_ms() - t_ep;
         total_ms += ms;
@@ -213,13 +295,20 @@ int main(int argc, char **argv) {
     CUDA_CHECK(cudaSetDevice(0));
     CUDA_CHECK(cudaMemcpy(h_p0, R[0].p, L.total * sizeof(float), cudaMemcpyDeviceToHost));
     double max_diff = 0;
+    int bitwise = 1;
     for (int i = 1; i < k; i++) {
         CUDA_CHECK(cudaSetDevice(i));
         CUDA_CHECK(cudaMemcpy(h_pi, R[i].p, L.total * sizeof(float), cudaMemcpyDeviceToHost));
-        for (size_t j = 0; j < L.total; j++) { double d = fabs(h_p0[j] - h_pi[j]); if (d > max_diff) max_diff = d; }
+        if (memcmp(h_p0, h_pi, L.total * sizeof(float))) bitwise = 0;
+        for (size_t j = 0; j < L.total; j++) {
+            double d = fabs(h_p0[j] - h_pi[j]);
+            if (d > max_diff || d != d) max_diff = d;      /* d != d: NaN */
+        }
     }
-    fprintf(stderr, "max parameter difference between replicas: %.3g %s\n", max_diff,
-            max_diff < 1e-4 ? "(OK)" : "(MISMATCH: allreduce result differs between GPUs)");
+    int replicas_ok = max_diff < 1e-4;                     /* false for NaN too */
+    fprintf(stderr, "max parameter difference between replicas: %.3g %s%s\n", max_diff,
+            replicas_ok ? "(OK)" : "(MISMATCH: allreduce result differs between GPUs)",
+            k > 1 && bitwise ? " [bitwise identical]" : "");
 
     /* Test accuracy on GPU 0, in chunks of the local batch. */
     Replica *r0 = &R[0];
@@ -242,11 +331,22 @@ int main(int argc, char **argv) {
     fprintf(stderr, "test accuracy %.4f   exposed comm %.1f%% of step time\n", acc, comm_pct);
 
     char name[64];
-    snprintf(name, sizeof name, "%s%s", allreduce_selected_name(), o.overlap ? "+overlap" : "");
+    snprintf(name, sizeof name, "%s%s", allreduce_selected_name(),
+             o.overlap ? "+overlap" : o.per_layer ? "+layer" : "");
     if (k == 1) snprintf(name, sizeof name, "gpu1");
-    csv_write(o.csv, name, k, L.total * sizeof(float), -1, -1, total_ms / 1e3 / o.epochs, comm_pct, acc);
+    if (ph.steps) {
+        double n = (double)ph.steps;
+        fprintf(stderr, "per step (max over GPUs, ms): data %.3f  h2d %.3f  fwd %.3f  bwd %.3f  comm %.3f  upd %.3f  | step %.3f  imbalance %.3f\n",
+                ph.data / n, ph.h2d / n, ph.fwd / n, ph.bwd / n, ph.comm / n, ph.upd / n, ph.step / n, ph.imbalance / n);
+    }
 
     if (lf) fclose(lf);
     ar_teardown();
+    if (!replicas_ok) {
+        fprintf(stderr, "ERROR: replicas differ, no results written (exit 4)\n");
+        return 4;
+    }
+    csv_write(o.csv, name, k, L.total * sizeof(float), -1, -1, total_ms / 1e3 / o.epochs, comm_pct, acc);
+    phase_csv_write(o.phase_csv, name, k, o.seed, &ph);
     return 0;
 }

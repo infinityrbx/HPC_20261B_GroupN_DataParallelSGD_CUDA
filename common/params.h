@@ -28,7 +28,9 @@ typedef struct {
     const char *data_dir;
     const char *csv;       /* append results here (optional)   */
     const char *loss_log;  /* per-epoch loss log (optional)    */
-    int overlap;           /* 1 = per-layer bucketed allreduce */
+    int overlap;           /* 1 = per-layer buckets, overlapped with backward */
+    int per_layer;         /* 1 = per-layer buckets after backward (no overlap)  */
+    const char *phase_csv; /* per-phase timing breakdown (optional)              */
 } Options;
 
 void parse_options(int argc, char **argv, Options *o);

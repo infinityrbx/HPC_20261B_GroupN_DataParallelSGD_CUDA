@@ -15,10 +15,10 @@ COMMON_O  = $(BIN)/mnist.o $(BIN)/params.o
 AR_SRC    = allreduce/common.cu allreduce/registry.cu allreduce/host_ref.cu \
             allreduce/tree.cu allreduce/ring.cu allreduce/rd.cu
 
-.PHONY: all seq cuda clean data
+.PHONY: all seq cuda clean data analyze
 all: seq cuda
 seq: $(BIN)/mlp_seq
-cuda: $(BIN)/train_dp $(BIN)/bench_allreduce
+cuda: $(BIN)/train_dp $(BIN)/bench_allreduce $(BIN)/bench_p2p
 
 $(BIN):
 	mkdir -p $(BIN)
@@ -35,6 +35,13 @@ $(BIN)/train_dp: cuda/train_dp.cu cuda/kernels.cu cuda/kernels.cuh $(AR_SRC) all
 
 $(BIN)/bench_allreduce: bench/bench_allreduce.cu $(AR_SRC) allreduce/allreduce.h common/*.h | $(BIN)
 	$(NVCC) $(NVFLAGS) -o $@ bench/bench_allreduce.cu $(AR_SRC)
+
+$(BIN)/bench_p2p: bench/bench_p2p.cu $(AR_SRC) allreduce/allreduce.h common/*.h | $(BIN)
+	$(NVCC) $(NVFLAGS) -o $@ bench/bench_p2p.cu $(AR_SRC)
+
+# Tables + figures from results/*.csv (needs python3; matplotlib optional for figures)
+analyze:
+	python3 scripts/analyze.py results
 
 data:
 	bash scripts/get_mnist.sh data
