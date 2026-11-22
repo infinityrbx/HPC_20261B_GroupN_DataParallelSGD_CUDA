@@ -14,7 +14,7 @@ def sh(cmd):
 
 sh("nvidia-smi; nvcc --version")
 REPO_URL = "https://github.com/infinityrbx/HPC_20261B_GroupN_DataParallelSGD_CUDA"
-BRANCH = "matmul-profile"
+BRANCH = "main"
 sh(f"git clone --depth 1 -b {BRANCH} {REPO_URL} repo")
 os.chdir("repo")
 sh("make data && make ARCH=sm_75")
