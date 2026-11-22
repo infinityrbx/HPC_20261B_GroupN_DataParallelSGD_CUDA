@@ -52,7 +52,6 @@ void ar_add(int, float *d, const float *s, size_t n, cudaStream_t st) {
 void ar_scale(int, float *x, float a, size_t n, cudaStream_t st) {
     st->q.push_back({-1, [=] { for (size_t i = 0; i < n; i++) x[i] *= a; }});
 }
-void ar_todo(const char *n) { fprintf(stderr, "todo %s\n", n); exit(2); }
 
 static void run_all(vector<SimStream> &S) {
     for (;;) {

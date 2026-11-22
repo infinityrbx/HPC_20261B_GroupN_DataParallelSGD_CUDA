@@ -12,10 +12,10 @@
  *   3. CSV row: method,k,msg_bytes,time_ms,busbw_GBs,-1,-1,-1
  *      busbw = (bytes / time) * 2(k-1)/k   (same definition as nccl-tests)
  */
-#include "../allreduce/allreduce.h"
-#include "../common/config.h"
-#include "../common/csv.h"
-#include "../common/timer.h"
+#include "../src/allreduce/allreduce.h"
+#include "../src/common/config.h"
+#include "../src/common/csv.h"
+#include "../src/common/timer.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

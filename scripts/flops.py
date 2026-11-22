@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FLOP count per training step for the MLP in cuda/train_dp.cu, split into
+"""FLOP count per training step for the MLP in src/cuda/train_dp.cu, split into
 matrix multiplication and everything else, plus one conv layer done as im2col + matmul.
 
   flops.py [--hidden 512 ...] [--batch 256] [--step-ms 0.855]
@@ -8,7 +8,7 @@ matrix multiplication and everything else, plus one conv layer done as im2col + 
 """
 import argparse
 
-IN, C = 784, 10  # common/config.h: CFG_INPUT, CFG_CLASSES
+IN, C = 784, 10  # src/common/config.h: CFG_INPUT, CFG_CLASSES
 
 def mlp(H, B):
     P = IN * H + H + H * C + C

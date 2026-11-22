@@ -31,7 +31,7 @@ All numbers below come from Kaggle, 2× Tesla T4, on 2026-11-22. Raw logs and CS
 | Training | seed 42, global batch 256 (128 per GPU at k = 2), lr 0.1, 2 epochs |
 | Benchmark | 4 KB to 64 MB, 5 warm-up + 20 timed runs, median; busbw = bytes/time × 2(k−1)/k |
 
-Methods (one file each in `allreduce/`):
+Methods (one file each in `src/allreduce/`):
 
 | Method | How it works |
 |---|---|
@@ -196,23 +196,25 @@ python3 scripts/flops.py --hidden 512             # FLOP count, matmul vs the re
 On Kaggle (set your username in `kernel-metadata.json` first):
 
 ```bash
-kaggle kernels push -p scripts/kaggle --accelerator NvidiaTeslaT4          # build, check, train, benchmark
-kaggle kernels push -p scripts/kaggle_profile --accelerator NvidiaTeslaT4  # nsys kernel-time profile
+kaggle kernels push -p scripts/kaggle/check --accelerator NvidiaTeslaT4    # build, check, train, benchmark
+kaggle kernels push -p scripts/kaggle/profile --accelerator NvidiaTeslaT4  # nsys kernel-time profile
 ```
 
-Fixed settings live in `common/config.h`. CSV columns everywhere:
+Fixed settings live in `src/common/config.h`. CSV columns everywhere:
 `method,k,msg_bytes,time_ms,busbw_GBs,epoch_s,comm_pct,test_acc` (`-1` = not applicable;
 `comm_pct` = exposed communication as a % of step time).
 
 ## Layout
 
 ```
-common/     config.h (fixed settings), MNIST loader, params/CLI, timer, CSV
-seq/        mlp_seq.c: sequential C MLP (correctness reference)
-cuda/       kernels.cu (tiled matmul, softmax, relu, ...), train_dp.cu (training loop)
-allreduce/  allreduce.h (interface), ar_sync.h, common.cu, registry.cu, one file per method
-bench/      bench_allreduce.cu: correctness + latency/bandwidth benchmark
-scripts/    run_experiments.sh, flops.py, kernel_share.py, kaggle/, kaggle_profile/
-tests/      sim_allreduce.cpp + mock CUDA runtime (make simcheck)
-runs/       raw Kaggle logs and CSVs
+src/
+  common/     config.h (fixed settings), MNIST loader, params/CLI, timer, CSV
+  seq/        mlp_seq.c: sequential C MLP (correctness reference)
+  cuda/       kernels.cu (tiled matmul, softmax, relu, ...), train_dp.cu (training loop)
+  allreduce/  allreduce.h (interface), ar_sync.h, common.cu, registry.cu, one file per method
+bench/        bench_allreduce.cu: correctness + latency/bandwidth benchmark
+tests/        sim_allreduce.cpp + mock CUDA runtime (make simcheck)
+scripts/      run_experiments.sh, flops.py, kernel_share.py, get_mnist.sh
+  kaggle/     check/ (build, check, train, benchmark), profile/ (nsys kernel profile)
+runs/         raw Kaggle logs and CSVs
 ```

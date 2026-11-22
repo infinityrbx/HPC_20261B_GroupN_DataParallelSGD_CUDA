@@ -1,31 +1,31 @@
 /*
- * allreduce.h - THE interface every method must implement.
+ * allreduce.h - the interface shared by every allreduce method.
  *
  *   void allreduce_<name>(float** grads, size_t n, int k, cudaStream_t* streams);
  *
- * Contract (read carefully; the comparison is only fair if every method follows it):
+ * Contract (every method follows it, so the comparison is fair):
  *  1. grads[i] is a device pointer on GPU i holding n floats (i = 0..k-1).
  *  2. When all streams[i] have finished, EVERY grads[i] must hold the element-wise
  *     AVERAGE (sum / k) of the k input buffers. The result is written in place.
  *  3. Enqueue work on streams[i] (the stream that belongs to GPU i) and return.
- *     Do NOT call cudaDeviceSynchronize() or other blocking host waits unless your
- *     algorithm truly needs them (it hurts overlap; say so in your report).
+ *     No cudaDeviceSynchronize() or other blocking host waits (they would break
+ *     overlap with the backward pass).
  *     You may use cudaEvents to make stream i wait for stream j.
  *  4. Must work for any n (n need not be divisible by k) and k = 1..8.
- *  5. Allowed: cudaMemcpyPeerAsync, cudaMemcpyAsync, your own kernels, peer
+ *  5. Allowed: cudaMemcpyPeerAsync, cudaMemcpyAsync, own kernels, peer
  *     access from kernels, the helpers below. NOT allowed: NCCL, cuBLAS, MPI
  *     collectives, any other communication/math library.
  *  6. Get temporary buffers from ar_scratch() so allocation is not timed.
  *  7. Use ar_add()/ar_scale() for reductions so all methods use the same
- *     arithmetic kernel (you may write a fused kernel; document it if you do).
- *  8. Cross-GPU ordering is YOUR job: on entry, streams[i] is only ordered after
+ *     arithmetic kernel.
+ *  8. Each method orders its own cross-GPU work: on entry, streams[i] is only ordered after
  *     the work that produced grads[i]. Before stream i reads or writes grads[j]
  *     (or GPU j's scratch), make it wait for an event recorded on streams[j].
  *     ar_barrier() does this for all pairs (simple but coarse; finer events are
- *     faster and are part of your optimization).
+ *     faster; tree, ring and rd use them, see ar_sync.h).
  *
- * To add your method: implement it in allreduce/<name>.cu and add one line to
- * the table in allreduce/registry.cu.
+ * Adding a method: implement it in src/allreduce/<name>.cu and add one line to
+ * the table in src/allreduce/registry.cu.
  */
 #ifndef ALLREDUCE_H
 #define ALLREDUCE_H
@@ -35,11 +35,11 @@
 typedef void (*allreduce_fn)(float **grads, size_t n, int k, cudaStream_t *streams);
 
 /* ---- Methods ------------------------------------------------------------- */
-void allreduce_host_ref(float **grads, size_t n, int k, cudaStream_t *streams); /* given: reference */
+void allreduce_host_ref(float **grads, size_t n, int k, cudaStream_t *streams); /* reference: via host */
 void allreduce_tree    (float **grads, size_t n, int k, cudaStream_t *streams); /* paper's method */
 void allreduce_ring    (float **grads, size_t n, int k, cudaStream_t *streams); /* ring */
 void allreduce_rd      (float **grads, size_t n, int k, cudaStream_t *streams); /* recursive doubling */
-/* Overlap is the training loop's --overlap mode, see cuda/train_dp.cu */
+/* Overlap is the training loop's --overlap mode, see src/cuda/train_dp.cu */
 
 /* ---- Registry / dispatch --------------------------------------------------- */
 /* Select a method by name ("host_ref", "tree", "ring", "rd"). Returns 0 if ok. */
@@ -49,7 +49,7 @@ void allreduce_list(void);
 /* Calls the selected method (no-op when k == 1). */
 void allreduce(float **grads, size_t n, int k, cudaStream_t *streams);
 
-/* ---- Shared helpers (allreduce/common.cu) --------------------------------- */
+/* ---- Shared helpers (src/allreduce/common.cu) --------------------------------- */
 void   ar_setup(int k);                 /* enable peer access where possible  */
 int    ar_can_p2p(int i, int j);        /* 1 if GPU i can access GPU j memory */
 float *ar_scratch(int dev, int slot, size_t bytes); /* cached temp buffer, slot 0..3 */
@@ -57,7 +57,6 @@ void   ar_add(int dev, float *dst, const float *src, size_t n, cudaStream_t s); 
 void   ar_scale(int dev, float *x, float alpha, size_t n, cudaStream_t s);      /* x *= alpha */
 void   ar_barrier(int k, cudaStream_t *streams); /* every stream waits for all others */
 void   ar_teardown(void);
-void   ar_todo(const char *name);       /* prints "not implemented" and exits */
 
 #define CUDA_CHECK(call) do {                                                  \
     cudaError_t e_ = (call);                                                   \

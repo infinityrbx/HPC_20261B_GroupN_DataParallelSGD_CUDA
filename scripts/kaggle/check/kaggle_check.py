@@ -1,5 +1,5 @@
 # First GPU check on Kaggle: build, correctness test, short training runs.
-# Push with:  kaggle kernels push -p scripts/kaggle   (after editing kernel-metadata.json)
+# Push with:  kaggle kernels push -p scripts/kaggle/check   (after editing kernel-metadata.json)
 import os, subprocess
 
 def sh(cmd):

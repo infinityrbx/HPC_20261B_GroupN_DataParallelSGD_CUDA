@@ -108,8 +108,3 @@ void ar_teardown(void) {
                 g_scratch[d][s] = NULL; g_scratch_bytes[d][s] = 0;
             }
 }
-
-void ar_todo(const char *name) {
-    fprintf(stderr, "allreduce method '%s' is not implemented yet (see allreduce/%s.cu)\n", name, name);
-    exit(2);
-}

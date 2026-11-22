@@ -1,4 +1,4 @@
-/* registry.cu - maps method names to implementations. Add your method here. */
+/* registry.cu - maps method names to implementations. */
 #include "allreduce.h"
 #include <stdio.h>
 #include <string.h>

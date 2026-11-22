@@ -1,5 +1,5 @@
 /*
- * host_ref.cu - REFERENCE allreduce (given, not one of the compared methods).
+ * host_ref.cu - REFERENCE allreduce (correctness baseline, not one of the compared methods).
  * Copies every buffer to host memory, averages on the CPU, copies back.
  * It is simple and obviously correct, so it is used to validate the other
  * methods and as the "no GPU-to-GPU communication" baseline. It blocks the host.

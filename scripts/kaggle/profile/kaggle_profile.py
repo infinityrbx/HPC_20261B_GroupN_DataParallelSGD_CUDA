@@ -1,5 +1,5 @@
 # Kernel-time profile on Kaggle: what share of GPU time is matrix multiplication?
-# Push with:  kaggle kernels push -p scripts/kaggle_profile --accelerator NvidiaTeslaT4
+# Push with:  kaggle kernels push -p scripts/kaggle/profile --accelerator NvidiaTeslaT4
 # (set your username in kernel-metadata.json first).
 # Profiles 1-GPU training for one epoch at H = 512 (the fixed setting), 1024 and 2048,
 # with nsys if it is installed, otherwise ncu. Prints a per-kernel table and the
