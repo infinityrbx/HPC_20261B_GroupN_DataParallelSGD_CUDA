@@ -19,8 +19,8 @@ All numbers below come from Kaggle, 2× Tesla T4, on 2026-11-22. Raw logs and CS
 | Are the GPU allreduce methods correct? | Yes. tree, ring and rd pass every check; replicas stay bitwise identical; loss matches 1 GPU to 3.4e-6; 92.70 % test accuracy after 2 epochs. |
 | Is a GPU faster than a CPU for training? | Yes. 1 T4: 0.208 s per epoch; sequential C on one CPU core: 7.99 s. About **38×**. |
 | Is matrix multiplication the bottleneck? | Yes. 99.7 % of the FLOPs and **94.5–95.5 % of GPU kernel time** (nsys). |
-| How much does communication cost? | About **half of every 2-GPU step**: 0.41–0.46 ms to allreduce the 1.63 MB gradient on GPU, 1.27 ms (68.5 % of the step) through the CPU. |
-| Do 2 GPUs beat 1? | Barely. 1.06–1.18× per step, because communication eats the compute saved by splitting the batch. |
+| How much does communication cost? | About **half of every 2-GPU step** (47–50 % exposed communication) with the GPU methods, 68.5 % through the CPU. One allreduce of the 1.63 MB gradient takes 0.36–0.39 ms in the benchmark. |
+| Do 2 GPUs beat 1? | No, not at this model size. In steady state (epoch 2) 2 GPUs take 0.231–0.234 s per epoch against 0.208 s on 1 GPU, because communication eats the compute saved by splitting the batch. |
 | Which allreduce wins? | tree at 4–8 KB, recursive doubling from 16 KB to 2 MB, ring from 4 MB up. All reach 4.5–4.7 GB/s. |
 
 ## Setup
@@ -89,48 +89,40 @@ is 1.4 MFLOP. Matmul is **99.7 % of the FLOPs**, at every hidden size. For compa
 
 The time share is a little below the FLOP share because the element-wise kernels are
 memory-bound: they do almost no arithmetic but still read and write every element. The tiled
-matmul reaches about 490 GFLOP/s, 6 % of the T4's FP32 peak, so a faster matmul would cut
-every step's compute directly.
+matmul does about 106 GFLOP per epoch (training plus test-set forward passes) in 208.5 ms of kernel
+time, about 510 GFLOP/s or 6 % of the T4's FP32 peak, so a faster matmul would cut every step's
+compute directly.
 
 ## 4. Communication cost and speedup on 2 GPUs
 
-Per-step time by phase, ms (max over GPUs), and exposed communication as a share of the step:
+`train_dp` reports the epoch time and the exposed communication (end of backward to end of
+allreduce on GPU 0) as a share of the step:
 
-| Config | fwd | bwd | comm | step | comm share | Speedup vs 1 GPU (step) |
-|---|---|---|---|---|---|---|
-| 1 GPU | 0.383 | 0.472 | 0.004 | 0.964 | 0.4 % | 1.00× |
-| host_ref | 0.237 | 0.249 | 1.266 | 1.801 | 68.5 % | 0.54× |
-| tree | 0.189 | 0.199 | 0.427 | 0.862 | 46.8 % | 1.12× |
-| tree + overlap | 0.166 | 0.178 | 0.411 | 0.825 | 49.9 % | 1.17× |
-| ring | 0.212 | 0.223 | 0.460 | 0.908 | 50.3 % | 1.06× |
-| ring + overlap | 0.166 | 0.181 | 0.416 | 0.828 | 50.3 % | 1.16× |
-| rd | 0.208 | 0.218 | 0.452 | 0.899 | 48.4 % | 1.07× |
-| rd + overlap | 0.167 | 0.181 | 0.407 | 0.815 | 49.9 % | 1.18× |
-
-Data loading (about 0.17 ms) and the update are left out of the table; they are the same in every row.
-
-Epoch time (s):
-
-| Config | Mean of 2 epochs | Epoch 2 only |
-|---|---|---|
-| 1 GPU | 0.267 | 0.208 |
-| host_ref | 0.463 | 0.436 |
-| tree / ring / rd | 0.243 / 0.250 / 0.251 | 0.234 / 0.231 / 0.233 |
-| tree / ring / rd + overlap | 0.234 / 0.234 / 0.232 | 0.233 / 0.234 / 0.231 |
+| Config | Mean of 2 epochs (s) | Epoch 2 only (s) | Exposed comm |
+|---|---|---|---|
+| 1 GPU | 0.267 | 0.208 | 0.4 % |
+| host_ref | 0.463 | 0.436 | 68.5 % |
+| host_ref + overlap | 0.451 | 0.452 | 71.3 % |
+| tree | 0.243 | 0.234 | 46.8 % |
+| tree + overlap | 0.234 | 0.233 | 49.9 % |
+| ring | 0.250 | 0.231 | 50.3 % |
+| ring + overlap | 0.234 | 0.234 | 50.3 % |
+| rd | 0.251 | 0.233 | 48.4 % |
+| rd + overlap | 0.232 | 0.231 | 49.9 % |
 
 What this shows:
 
-- Splitting the batch halves the compute (forward + backward 0.86 ms → about 0.35–0.43 ms per
-  GPU), but the allreduce of 1.63 MB costs about as much as was saved. Communication is the
-  largest single phase in every 2-GPU run.
-- Doing the reduction on the GPUs instead of the CPU cuts communication about 3× (1.27 ms →
-  0.41–0.46 ms) and halves the epoch time.
-- `--overlap` lowers step time by 4–9 %, but exposed communication stays at about 50 %. Most of
-  the gain comes from more even GPU timing (load imbalance 1.06–1.08 → 1.02); a two-layer MLP has
-  little backward work left to hide communication behind.
-- Speedup depends on how it is measured. Per step, 2 GPUs are 6–18 % faster. Per epoch, the
-  2-epoch mean shows 1.06–1.15×, but only because the 1-GPU run's first epoch includes warm-up;
-  on epoch 2 alone, 2 GPUs are about 10 % slower than 1.
+- About half of every 2-GPU step is communication. In the benchmark (section 5), one allreduce
+  of the model's 1.63 MB gradient takes 0.36–0.39 ms, so communication costs about as much as
+  the compute saved by splitting the batch.
+- Doing the reduction on the GPUs instead of the CPU halves the epoch time (0.46 s → 0.23–0.25 s)
+  and lowers exposed communication from 68.5 % to about 50 %.
+- `--overlap` does not lower the exposed-communication share (still about 50 %); a two-layer MLP
+  has little backward work left to hide communication behind. Its 2-epoch mean is a little lower,
+  but on epoch 2 alone the difference is under 2 %, within noise.
+- In steady state (epoch 2), 2 GPUs are about 10 % slower than 1 GPU. The 2-epoch mean shows
+  1.06–1.15× instead, but only because the 1-GPU run's first epoch includes warm-up (0.326 s,
+  then 0.208 s).
 
 ## 5. Raw allreduce: which method wins at which size
 
@@ -176,8 +168,8 @@ Bus bandwidth at 64 MB: tree 4.47, ring 4.69, rd 4.48 GB/s. A one-way peer copy 
 - **T4 power throttling.** The T4 is a 70 W passively cooled card that lowers its clocks under
   sustained load. Clocks were not logged during the runs, so throttling cannot be ruled out.
 - **Code version.** The 2-GPU training log was built from the `ltnaphixay/allreduce-cuda` branch of
-  `infinityrbx/High-Performance-Computing`, which has the `--per-layer` and `--phase-csv` options
-  used there; this repository's `train_dp` does not have them yet.
+  `infinityrbx/High-Performance-Computing`. Only numbers that this repository's code also
+  produces (epoch time, exposed communication, accuracy, allreduce benchmark) are reported here.
 
 ## Build and run
 

@@ -19,8 +19,8 @@ Mọi số liệu dưới đây đo trên Kaggle, 2× Tesla T4, ngày 22/11/2026
 | Các thuật toán allreduce trên GPU có đúng không? | Có. tree, ring và rd qua mọi bài kiểm tra; các bản sao tham số giống nhau từng bit; loss khớp với 1 GPU sai khác 3,4e-6; độ chính xác 92,70 % sau 2 epoch. |
 | GPU có nhanh hơn CPU khi huấn luyện không? | Có. 1 T4: 0,208 s/epoch; bản C tuần tự trên một nhân CPU: 7,99 s. Nhanh khoảng **38 lần**. |
 | Phép nhân ma trận có phải nút thắt cổ chai không? | Có. Chiếm 99,7 % số FLOP và **94,5–95,5 % thời gian kernel trên GPU** (đo bằng nsys). |
-| Truyền thông tốn bao nhiêu? | Khoảng **một nửa mỗi bước khi dùng 2 GPU**: 0,41–0,46 ms để allreduce gradient 1,63 MB trên GPU, 1,27 ms (68,5 % bước) nếu đi qua CPU. |
-| 2 GPU có nhanh hơn 1 GPU không? | Chỉ nhỉnh hơn một chút: 1,06–1,18 lần mỗi bước, vì thời gian truyền thông gần bằng phần tính toán tiết kiệm được khi chia batch. |
+| Truyền thông tốn bao nhiêu? | Khoảng **một nửa mỗi bước khi dùng 2 GPU** (47–50 % truyền thông không được che) với các phương pháp trên GPU, 68,5 % nếu đi qua CPU. Một lần allreduce gradient 1,63 MB mất 0,36–0,39 ms trong benchmark. |
+| 2 GPU có nhanh hơn 1 GPU không? | Không, với mô hình nhỏ này. Ở trạng thái ổn định (epoch 2), 2 GPU mất 0,231–0,234 s mỗi epoch so với 0,208 s của 1 GPU, vì thời gian truyền thông gần bằng phần tính toán tiết kiệm được khi chia batch. |
 | Thuật toán allreduce nào nhanh nhất? | tree ở 4–8 KB, recursive doubling từ 16 KB đến 2 MB, ring từ 4 MB trở lên. Cả ba đều đạt 4,5–4,7 GB/s. |
 
 ## Cấu hình thí nghiệm
@@ -88,49 +88,40 @@ chập 3×3 từ 32 lên 64 kênh trên ảnh 28×28 là phép nhân (784×288)�
 
 Tỉ lệ thời gian thấp hơn tỉ lệ FLOP một chút vì các kernel theo từng phần tử bị giới hạn bởi băng
 thông bộ nhớ: chúng gần như không tính toán nhưng vẫn phải đọc và ghi mọi phần tử. Kernel nhân ma
-trận dạng tile đạt khoảng 490 GFLOP/s, chỉ 6 % hiệu năng FP32 đỉnh của T4, nên tăng tốc phép nhân
-ma trận sẽ giảm trực tiếp phần tính toán của mỗi bước.
+trận thực hiện khoảng 106 GFLOP mỗi epoch (huấn luyện cộng lan truyền thuận trên tập test) trong
+208,5 ms thời gian kernel, tức khoảng 510 GFLOP/s, chỉ 6 % hiệu năng FP32 đỉnh của T4, nên tăng tốc
+phép nhân ma trận sẽ giảm trực tiếp phần tính toán của mỗi bước.
 
 ## 4. Chi phí truyền thông và tăng tốc trên 2 GPU
 
-Thời gian mỗi bước theo từng pha, ms (lấy giá trị lớn nhất giữa các GPU), và tỉ lệ truyền thông
-không được che trong một bước:
+`train_dp` báo thời gian mỗi epoch và tỉ lệ truyền thông không được che (từ lúc kết thúc lan truyền
+ngược đến lúc allreduce xong trên GPU 0) trong mỗi bước:
 
-| Cấu hình | fwd | bwd | comm | step | tỉ lệ comm | Tăng tốc so với 1 GPU (theo bước) |
-|---|---|---|---|---|---|---|
-| 1 GPU | 0,383 | 0,472 | 0,004 | 0,964 | 0,4 % | 1,00× |
-| host_ref | 0,237 | 0,249 | 1,266 | 1,801 | 68,5 % | 0,54× |
-| tree | 0,189 | 0,199 | 0,427 | 0,862 | 46,8 % | 1,12× |
-| tree + overlap | 0,166 | 0,178 | 0,411 | 0,825 | 49,9 % | 1,17× |
-| ring | 0,212 | 0,223 | 0,460 | 0,908 | 50,3 % | 1,06× |
-| ring + overlap | 0,166 | 0,181 | 0,416 | 0,828 | 50,3 % | 1,16× |
-| rd | 0,208 | 0,218 | 0,452 | 0,899 | 48,4 % | 1,07× |
-| rd + overlap | 0,167 | 0,181 | 0,407 | 0,815 | 49,9 % | 1,18× |
-
-Thời gian nạp dữ liệu (khoảng 0,17 ms) và cập nhật không đưa vào bảng; chúng như nhau ở mọi dòng.
-
-Thời gian mỗi epoch (s):
-
-| Cấu hình | Trung bình 2 epoch | Chỉ epoch 2 |
-|---|---|---|
-| 1 GPU | 0,267 | 0,208 |
-| host_ref | 0,463 | 0,436 |
-| tree / ring / rd | 0,243 / 0,250 / 0,251 | 0,234 / 0,231 / 0,233 |
-| tree / ring / rd + overlap | 0,234 / 0,234 / 0,232 | 0,233 / 0,234 / 0,231 |
+| Cấu hình | Trung bình 2 epoch (s) | Chỉ epoch 2 (s) | Truyền thông không được che |
+|---|---|---|---|
+| 1 GPU | 0,267 | 0,208 | 0,4 % |
+| host_ref | 0,463 | 0,436 | 68,5 % |
+| host_ref + overlap | 0,451 | 0,452 | 71,3 % |
+| tree | 0,243 | 0,234 | 46,8 % |
+| tree + overlap | 0,234 | 0,233 | 49,9 % |
+| ring | 0,250 | 0,231 | 50,3 % |
+| ring + overlap | 0,234 | 0,234 | 50,3 % |
+| rd | 0,251 | 0,233 | 48,4 % |
+| rd + overlap | 0,232 | 0,231 | 49,9 % |
 
 Nhận xét:
 
-- Chia batch làm phần tính toán giảm một nửa (forward + backward từ 0,86 ms xuống khoảng
-  0,35–0,43 ms mỗi GPU), nhưng allreduce 1,63 MB tốn gần bằng phần tiết kiệm được. Truyền thông là
-  pha lớn nhất trong mọi lần chạy 2 GPU.
-- Thực hiện phép gom trên GPU thay vì CPU giảm truyền thông khoảng 3 lần (1,27 ms xuống
-  0,41–0,46 ms) và giảm một nửa thời gian mỗi epoch.
-- `--overlap` giảm thời gian bước 4–9 %, nhưng tỉ lệ truyền thông không được che vẫn khoảng 50 %.
-  Phần lớn lợi ích đến từ việc thời gian giữa hai GPU đều hơn (độ mất cân bằng từ 1,06–1,08 xuống
-  1,02); MLP hai lớp còn quá ít việc lan truyền ngược để che truyền thông.
-- Mức tăng tốc phụ thuộc cách đo. Theo bước, 2 GPU nhanh hơn 6–18 %. Theo epoch, trung bình 2 epoch
-  cho 1,06–1,15 lần, nhưng chỉ vì epoch đầu của lần chạy 1 GPU có thời gian khởi động; nếu chỉ xét
-  epoch 2, 2 GPU chậm hơn 1 GPU khoảng 10 %.
+- Khoảng một nửa mỗi bước 2 GPU là truyền thông. Trong benchmark (mục 5), một lần allreduce
+  gradient 1,63 MB của mô hình mất 0,36–0,39 ms, nên truyền thông tốn gần bằng phần tính toán tiết
+  kiệm được khi chia batch.
+- Thực hiện phép gom trên GPU thay vì CPU giảm một nửa thời gian mỗi epoch (0,46 s xuống
+  0,23–0,25 s) và giảm truyền thông không được che từ 68,5 % xuống khoảng 50 %.
+- `--overlap` không làm giảm tỉ lệ truyền thông không được che (vẫn khoảng 50 %); MLP hai lớp còn quá
+  ít việc lan truyền ngược để che truyền thông. Trung bình 2 epoch thấp hơn một chút, nhưng nếu chỉ
+  xét epoch 2 thì chênh lệch dưới 2 %, nằm trong mức nhiễu.
+- Ở trạng thái ổn định (epoch 2), 2 GPU chậm hơn 1 GPU khoảng 10 %. Trung bình 2 epoch cho
+  1,06–1,15 lần, nhưng chỉ vì epoch đầu của lần chạy 1 GPU có thời gian khởi động (0,326 s rồi
+  0,208 s).
 
 ## 5. Allreduce thuần: thuật toán nào thắng ở kích thước nào
 
@@ -178,8 +169,8 @@ Băng thông bus ở 64 MB: tree 4,47, ring 4,69, rd 4,48 GB/s. Một lần ché
   xung khi tải kéo dài. Xung nhịp không được ghi lại trong lúc chạy nên không loại trừ được khả năng
   này.
 - **Phiên bản mã nguồn.** Log huấn luyện 2 GPU được build từ nhánh `ltnaphixay/allreduce-cuda` của
-  `infinityrbx/High-Performance-Computing`, có các tùy chọn `--per-layer` và `--phase-csv` được dùng
-  ở đó; `train_dp` trong repo này chưa có các tùy chọn đó.
+  `infinityrbx/High-Performance-Computing`. README chỉ báo cáo các số liệu mà mã nguồn trong repo này
+  cũng tạo ra (thời gian epoch, tỉ lệ truyền thông không được che, độ chính xác, benchmark allreduce).
 
 ## Build và chạy
 
